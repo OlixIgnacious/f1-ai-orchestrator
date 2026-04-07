@@ -49,7 +49,7 @@ jobs:
           region: ${{ env.REGION }}
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
           env_vars: |-
-             ALLOYDB_HOST=127.0.0.1
+             ALLOYDB_HOST=34.27.46.40
              ALLOYDB_PORT=5432
              ALLOYDB_DATABASE=f1db
              ALLOYDB_USER=postgres
@@ -61,5 +61,3 @@ jobs:
             ALLOYDB_PASSWORD=ALLOYDB_PASSWORD:latest
             TOKEN_ENCRYPTION_KEY=TOKEN_ENCRYPTION_KEY:latest
             GOOGLE_OAUTH_CLIENT_SECRET=GOOGLE_OAUTH_CLIENT_SECRET:latest
-          # Attach the AlloyDB instance (connector)
-          flags: --add-cloudsql-instances=projects/f1-command-center-dev/locations/us-central1/clusters/f1-cluster/instances/f1-primary
