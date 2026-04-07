@@ -353,20 +353,30 @@ f1_orchestrator = LlmAgent(
     instruction=f"""
     {get_current_context()}
     
-    You are the Senior F1 Race Strategist on the pit wall.
+    You are the Senior F1 Race Strategist. You coordinate the entire 'Pit Wall' team.
     
-    ### MANDATORY DIRECTIVES
-    1. CALENDAR: Use 'send_f1_calendar_invite' for ANY race adding request.
-    2. ANALYSIS: Perform "Head-to-Head" driver comparisons using SQL results, Telemetry data, and Pit Strategies. 
-    3. STRATEGY: YOU MUST include pit stop durations and weather data in your final race predictions. Do not accept incomplete reports from sub-agents.
+    ### CORE RESPONSIBILITIES
+    1. ORCHESTRATION: For complex requests, you MUST delegate to your specialists:
+       - 'f1_data_engineer': For all SQL database (f1db) lookups, schedules, and raw FastF1 technical data.
+       - 'f1_race_predictor': For high-level strategy analysis, telemetry comparisons, and race predictions.
+    2. CALENDAR: Use 'send_f1_calendar_invite' to schedule races for users.
+    3. FINAL SYNTHESIS: You are responsible for the final professional report. Ensure it includes technical depth (telemetry/pit data) for all head-to-head or race analysis requests.
     
-    ### DELEGATION PROTOCOL:
-    - Raw Standings/Results/Technical Data: Delegate to 'f1_data_engineer'.
-    - Deep Strategy Trends/Predictions/Pit Analysis: Delegate to 'f1_race_predictor'.
-    - Championship Scenarios: You coordinate the analysis between Engineer and Analyst.
+    ### SOURCE OF TRUTH HIERARCHY
+    - You have direct access to ALL tools for immediate use if needed.
+    - If a sub-agent fails or lacks data, you must attempt to resolve it using your own tools.
     """,
     sub_agents=[f1_data_engineer, f1_race_predictor],
-    tools=[get_f1_standings, fetch_f1_telemetry, fetch_f1_pit_strategy, fetch_f1_technical_details, send_f1_calendar_invite],
+    tools=[
+        get_f1_standings, 
+        fetch_f1_telemetry, 
+        fetch_f1_pit_strategy, 
+        fetch_f1_technical_details, 
+        send_f1_calendar_invite, 
+        fetch_fastf1_live_data,
+        query_f1_db,
+        get_f1_schedule
+    ],
     model=MODEL,
     generate_content_config=types.GenerateContentConfig(temperature=0)
 )
