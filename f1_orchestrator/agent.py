@@ -43,7 +43,7 @@ def query_f1_db(sql_query: str):
     Executes a SQL query against the F1 AlloyDB (f1db).
     Use this for driver stats, race results, and lap times.
     """
-    print(f"\n[AGENT ACTION] Executing SQL: {sql_query}")
+    print(f"\n[TOOL: query_f1_db] Executing SQL: {sql_query}")
     try:
         # Use environment variables, defaulting to your local proxy settings (127.0.0.1:5433).
         db_host = os.getenv("ALLOYDB_HOST", "127.0.0.1")
@@ -78,7 +78,7 @@ def get_f1_schedule(year: int):
     Fetches the full F1 race schedule for a specific year.
     Use this to find upcoming races, dates, and circuit names.
     """
-    print(f"\n[AGENT ACTION] Fetching F1 Schedule for {year}")
+    print(f"\n[TOOL: get_f1_schedule] Fetching F1 Schedule for {year}")
     try:
         schedule = fastf1.get_event_schedule(year)
         # Select relevant columns for a concise overview
@@ -94,7 +94,7 @@ def fetch_fastf1_live_data(year: int, gp_name: str, session_type: str = "R"):
     - gp_name: e.g. 'Bahrain', 'Saudi Arabia'
     - session_type: 'R' (Race), 'Q' (Qualifying), 'S' (Sprint), 'FP1', 'FP2', 'FP3'
     """
-    print(f"\n[AGENT ACTION] Fetching FastF1 data: {year} {gp_name} {session_type}")
+    print(f"\n[TOOL: fetch_fastf1_live_data] Fetching FastF1 data: {year} {gp_name} {session_type}")
     try:
         session = fastf1.get_session(year, gp_name, session_type)
         session.load()
@@ -111,6 +111,7 @@ def create_f1_calendar_event(event_name: str, start_time: str, location: str, to
     - start_time: ISO format '2026-04-12T15:00:00Z'
     - location: The circuit or city name (e.g., 'Miami Gardens, USA')
     """
+    print(f"\n[TOOL: create_f1_calendar_event] Requesting Calendar Invite for: {event_name} at {location}")
     # 1. CHECK FOR CONFIRMATION
     confirmation = tool_context.tool_confirmation()
     
@@ -159,6 +160,7 @@ def visualize_lap_times(session_id: int, driver_id: str):
     Generates a line chart of lap times for a specific driver in a session.
     Saves as a PNG and returns the absolute file path.
     """
+    print(f"\n[TOOL: visualize_lap_times] Visualizing status for Driver {driver_id}")
     try:
         # 1. Fetch data using our existing bridge
         # (Assuming you have a 'lap_times' table or similar data in f1db)
@@ -253,9 +255,9 @@ f1_orchestrator = LlmAgent(
     
     HARD CAPABILITY - CALENDAR INVITES:
     You HAVE the capability to send Google Calendar invitations directly to the user's email.
-    - NEVER say "I cannot directly add events" or "I cannot add to your calendar."
-    - ALWAYS use the 'create_f1_calendar_event' tool when requested.
-    - If a user asks to "add the next race", you MUST first ask the 'f1_data_engineer' to find the next race details (Date, Name, Location), then call 'create_f1_calendar_event'.
+    - NEVER call 'create_f1_calendar_event' before identifying the race details.
+    - ALWAYS ask 'f1_data_engineer' for the next race details (Date, Name, Location) FIRST.
+    - ONLY use the 'create_f1_calendar_event' tool if the user explicitly asks to "Add it" or "Send invite" AFTER you have provided the details.
     
     TEMPORAL CONTEXT:
     {CURRENT_CONTEXT}
@@ -263,12 +265,13 @@ f1_orchestrator = LlmAgent(
     DELEGATION PROTOCOL:
     - For raw numbers, standings, or result lookups: Delegate to 'f1_data_engineer'.
     - For predictions or strategy analysis: Delegate to 'f1_race_predictor'.
-    - For ALL Calendar/Email Invites: Use YOUR 'create_f1_calendar_event' tool.
+    - For ALL Calendar/Email Invites: Use YOUR 'create_f1_calendar_event' tool (Requires Date, GP, and Location).
     
     SYNTHESIS WORKFLOW:
-    1. Briefing: Start with a concise summary.
-    2. Strategic Insight: Provide a "Box Box" insight.
-    3. Actionable Next Step: You MUST ask: "Would you like me to send a Google Calendar invite for this race to your email?"
+    1. Identification: Call 'f1_data_engineer' to find the next/requested race details.
+    2. Briefing: Present the race details (Date, Time, Circuit).
+    3. Strategic Insight: Provide a "Box Box" insight.
+    4. Actionable Next Step: If the race hasn't happened yet, ask: "Would you like me to send a Google Calendar invite for this race to your email?"
     
     TONE & STYLE:
     - Authoritative, professional, and slightly "Pit Wall" inspired.
