@@ -1,17 +1,13 @@
-import psycopg2
 import os
 import google.auth
 import fastf1
-import matplotlib.pyplot as plt
-import pandas as pd
+import psycopg2
 from datetime import datetime, timedelta
 from google.adk.agents import LlmAgent
 from google.genai import types
 from google.adk.tools import ToolContext
 from googleapiclient.discovery import build
 from .schema import F1_TABLE_METADATA
-
-import uuid
 import base64
 import urllib.parse
 
@@ -113,6 +109,32 @@ def fetch_fastf1_live_data(year: int, gp_name: str, session_type: str = "R"):
     except Exception as e:
         return f"FastF1 Error: {str(e)}"
 
+def get_f1_standings(year: int):
+    """
+    SYSTEM CAPABILITY: Fetches the Drivers' and Constructors' standings for a specific year.
+    Use this to identify champions, current leaders, and team performance trends.
+    - year: The F1 season year (e.g., 2024, 2025, 2026).
+    """
+    print(f"\n[TOOL: get_f1_standings] Fetching Standings for {year}")
+    try:
+        # 1. Primary: Use AlloyDB (f1db)
+        # Simplified query to find the latest standing for the year
+        sql = f"""
+        SELECT position, points, wins, standing_type, entity_id 
+        FROM f1_standings 
+        WHERE season = {year} 
+        AND round = (SELECT max(round) FROM f1_standings WHERE season = {year})
+        ORDER BY position ASC
+        """
+        db_res = query_f1_db(sql)
+        if "Data: []" not in db_res and "Database Error" not in db_res:
+             return f"F1 Standings for {year} (via f1db):\n{db_res}"
+             
+        # 2. Fallback: FastF1 (Ergast) Standings (Logic placeholder)
+        return f"Standings data for {year} is not available in the database yet. Please use 'get_f1_schedule' to manually check race winners."
+    except Exception as e:
+        return f"Standings Error: {str(e)}"
+
 def send_f1_calendar_invite(event_name: str, start_time: str, location: str, recipient_email: str, tool_context: ToolContext):
     """
     SYSTEM CAPABILITY: Sends a formal Google Calendar Invitation directly to a specific email inbox.
@@ -191,45 +213,6 @@ def send_f1_calendar_invite(event_name: str, start_time: str, location: str, rec
             print(f"DEBUG: Link Template also failed: {str(link_err)}", flush=True)
             return f"Calendar Error. Please verify your calendar is shared with the bot. Details: {str(calendar_err)}"
 
-def visualize_lap_times(session_id: int, driver_id: str):
-    """
-    SYSTEM CAPABILITY: Generates a professional line chart of lap times for a specific driver.
-    Use this tool to visualize performance trends and driver consistency across a session.
-    - session_id: Internal session ID integer.
-    - driver_id: Driver's unique ID or Code.
-    Saves a PNG chart and returns the absolute file path for display.
-    """
-    print(f"\n[TOOL: visualize_lap_times] Visualizing status for Driver {driver_id}")
-    try:
-        # 1. Fetch data using our existing bridge
-        # (Assuming you have a 'lap_times' table or similar data in f1db)
-        query = f"SELECT lap_number, lap_time FROM f1_lap_times WHERE session_id = {session_id} AND driver_id = '{driver_id}' ORDER BY lap_number"
-        
-        # Connect and fetch (logic simplified for brevity)
-        conn = psycopg2.connect(...) # Use your existing connection params
-        df = pd.read_sql(query, conn)
-        conn.close()
-
-        if df.empty:
-            return "No lap time data found for this driver."
-
-        # 2. Plotting
-        plt.figure(figsize=(10, 6))
-        plt.plot(df['lap_number'], df['lap_time'], marker='o', linestyle='-', color='red')
-        plt.title(f"Lap Time Trends: {driver_id}")
-        plt.xlabel("Lap Number")
-        plt.ylabel("Time (seconds)")
-        plt.grid(True)
-
-        # 3. Save to a unique local path
-        file_name = f"viz_{uuid.uuid4()}.png"
-        file_path = os.path.abspath(file_name)
-        plt.savefig(file_path)
-        plt.close()
-
-        return f"Visualization saved successfully at: {file_path}"
-    except Exception as e:
-        return f"Visualization Error: {str(e)}"
 
 # 5. AGENT DEFINITIONS (MULTI-AGENT SWARM)
 
@@ -269,14 +252,14 @@ f1_data_engineer = LlmAgent(
     instruction=f"""You are the F1 Data Engineering Lead. You are the source of truth for all telemetry, results, and standings.
     
     TEMPORAL CONTEXT:
-    {CURRENT_CONTEXT}
+    - Current System Date: April 2026.
+    - Database State (f1db): High-fidelity data is available through **March 2026**.
+    - This includes the ENTIRE **2025 Championship** (completed) and the start of the **2026 Season** (Bahrain, Saudi Arabian, and Japanese GPs complete).
     
     HANDLING DATA SOURCES:
-    1. PRIMARY (f1db): Use 'query_f1_db' for historical data (Seasons < 2026).
-    2. FALLBACK (FastF1): 
-       - If a query schedule returns empty:
-       - Use 'get_f1_schedule(year)' to find the calendar and upcoming races.
-       - Use 'fetch_fastf1_live_data' for specific session results.
+    1. PRIMARY (f1db): Use 'query_f1_db' for historical data (Through March 2026).
+    2. FALLBACK/STANDINGS: Use 'get_f1_standings' for season leaderboards.
+    3. REAL-TIME: Use 'fetch_fastf1_live_data' for 2026 sessions not yet in SQL.
     
     SQL GUIDELINES:
     {SQL_GUIDELINES}
@@ -300,7 +283,9 @@ f1_orchestrator = LlmAgent(
     3. If a user asks about adding a race, you MUST find the details from the 'f1_data_engineer' and then call 'send_f1_calendar_invite' immediately.
     
     TEMPORAL CONTEXT:
-    {CURRENT_CONTEXT}
+    - Today is April 2026. 
+    - The **2025 Championship** is historical. Analyze it for trends and driver momentum.
+    - The **2026 Season** is underway. The Japanese GP was the latest race in March.
     
     DELEGATION PROTOCOL:
     - For raw numbers, standings, or result lookups: Delegate to 'f1_data_engineer'.
@@ -315,7 +300,7 @@ f1_orchestrator = LlmAgent(
     Authoritative, professional, and slightly "Pit Wall" inspired. Use **bold** for Drivers and Teams.
     """,
     sub_agents=[f1_data_engineer, f1_race_predictor],
-    tools=[visualize_lap_times, send_f1_calendar_invite],
+    tools=[get_f1_standings, send_f1_calendar_invite],
     model=MODEL,
     generate_content_config=types.GenerateContentConfig(temperature=0)
 )
