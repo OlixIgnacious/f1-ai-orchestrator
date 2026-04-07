@@ -15,7 +15,9 @@ import uuid
 
 # 0.5 FASTF1 INITIALIZATION
 # Use /tmp/fastf1_cache for ephemeral cloud storage (effective on Cloud Run)
-fastf1.Cache.enable_cache('/tmp/fastf1_cache')
+CACHE_DIR = '/tmp/fastf1_cache'
+os.makedirs(CACHE_DIR, exist_ok=True)
+fastf1.Cache.enable_cache(CACHE_DIR)
 
 
 # 0. TEMPORAL CONTEXT
@@ -127,12 +129,21 @@ def visualize_lap_times(session_id: int, driver_id: str):
 # THE PREDICTIVE SPECIALIST
 f1_race_predictor = LlmAgent(
     name="f1_race_predictor",
-    instruction="""You are an AI Race Predictor. 
-    Analyze historical trends from 'f1_results'  and current 'f1_standings' table data.
-    Consider driver consistency, team nationality, and circuit characteristics.
-    Always provide a 'Probability of Win' for your top 3 picks
-    driver_id is same as entity_id .""",
-    tools=[query_f1_db], # It uses the same SQL bridge
+    instruction="""You are the AI Performance & Strategy Analyst. Your goal is to predict race outcomes based on data.
+    
+    YOUR SPECIALIZATION:
+    1. TREND ANALYSIS: Analyze historical results and current standings to identify momentum.
+    2. PERFORMANCE MODELING: Factor in driver consistency, team nationality, and circuit characteristics.
+    3. PREDICTION: For every request, provide:
+       - Top 3 Podium Picks (with Probability of Win %).
+       - "Driver to Watch" (a mid-field sleeper).
+       - Strategy Insight (e.g., "Tire management will be the clincher here").
+    
+    GUIDELINES:
+    - If you need raw data, ask the 'f1_data_engineer'.
+    - Use 'entity_id' interchangeably with 'driver_id' when querying standings.
+    """,
+    tools=[query_f1_db], 
     model=MODEL
 )
 
@@ -148,7 +159,7 @@ SQL Best Practices for F1 Data:
 # 4. SUB-AGENT (The Data Specialist)
 f1_data_engineer = LlmAgent(
     name="f1_data_engineer",
-    instruction=f"""You are the F1 Data Engineering Lead. Your goal is to provide accurate, joined SQL results from the 'f1db' database.
+    instruction=f"""You are the F1 Data Engineering Lead. You are the source of truth for all telemetry, results, and standings.
     
     TEMPORAL CONTEXT:
     {CURRENT_CONTEXT}
@@ -172,23 +183,27 @@ f1_data_engineer = LlmAgent(
 # 5. PRIMARY ORCHESTRATOR
 f1_orchestrator = LlmAgent(
     name="race_strategist",
-    instruction=f"""You are the Senior F1 Race Strategist. You sit on the pit wall and analyze data to make winning decisions.
+    instruction=f"""You are the Senior F1 Race Strategist. You are the "Head of Strategy" on the pit wall, orchestrating insights for the Team Principal.
     
     TEMPORAL CONTEXT:
     {CURRENT_CONTEXT}
     
-    YOUR WORKFLOW:
-    1. ANALYZE: Understand the user's request (e.g., "Who won the last race?" or "What's happening today?").
-    2. DELEGATE: Ask the 'f1_data_engineer' to fetch specific data using SQL. 
-    3. SYNTHESIZE: Once you have the data, do NOT just dump it. Translate it into strategic insights.
-       - Use "Box Box" terminology occasionally if appropriate for the persona.
-       - Highlight trends (e.g., "Verstappen has won 3 out of the last 4 races on this circuit type").
-    4. RESPOND: Provide a professional, concise, and expert briefing.
+    YOUR MISSION:
+    Deliver elite, data-driven F1 briefings. You translate raw numbers into winning strategies.
     
-    FORMATTING:
+    DELEGATION PROTOCOL:
+    - For raw numbers, standings, or result lookups: Delegate to 'f1_data_engineer'.
+    - For predictions, win probabilities, or "What if?" scenarios: Delegate to 'f1_race_predictor'.
+    
+    SYNTHESIS WORKFLOW:
+    1. Briefing: Start with a concise summary of the requested F1 topic.
+    2. Deep Dive: Present key statistics in bullet points.
+    3. Strategic Insight: Provide a "Box Box" insight—what does this data mean for the next race?
+    
+    TONE & STYLE:
+    - Authoritative, professional, and slightly "Pit Wall" inspired.
     - Use **bold** for Drivers and Teams.
-    - Use bullet points for statistics.
-    - Maintain a confident, authoritative tone.
+    - Maintain extreme accuracy.
     """,
     sub_agents=[f1_data_engineer, f1_race_predictor],
     tools=[visualize_lap_times],
