@@ -1,6 +1,9 @@
 import psycopg2
 import os
 import google.auth
+import fastf1
+import matplotlib.pyplot as plt
+import pandas as pd
 from datetime import datetime
 from google.adk.agents import LlmAgent
 from google.adk.tools.mcp_tool import McpToolset
@@ -8,9 +11,11 @@ from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnecti
 from google.genai import types
 from .schema import F1_TABLE_METADATA
 
-import matplotlib.pyplot as plt
-import pandas as pd
 import uuid
+
+# 0.5 FASTF1 INITIALIZATION
+# Use /tmp/fastf1_cache for ephemeral cloud storage (effective on Cloud Run)
+fastf1.Cache.enable_cache('/tmp/fastf1_cache')
 
 
 # 0. TEMPORAL CONTEXT
@@ -65,6 +70,23 @@ def query_f1_db(sql_query: str):
         return f"Columns: {colnames}\nData: {rows}"
     except Exception as e:
         return f"Database Error: {str(e)}"
+
+def fetch_fastf1_live_data(year: int, gp_name: str, session_type: str = "R"):
+    """
+    Fetches real-time or recent F1 session data using the FastF1 API.
+    Use this as a fallback if the local database (f1db) is missing 2024+ data.
+    - gp_name: e.g. 'Bahrain', 'Saudi Arabia'
+    - session_type: 'R' (Race), 'Q' (Qualifying), 'S' (Sprint), 'FP1', 'FP2', 'FP3'
+    """
+    print(f"\n[AGENT ACTION] Fetching FastF1 data: {year} {gp_name} {session_type}")
+    try:
+        session = fastf1.get_session(year, gp_name, session_type)
+        session.load()
+        
+        results = session.results[['ClassifiedPosition', 'FullName', 'TeamName', 'Status', 'Points']]
+        return f"Results for {year} {gp_name} {session_type}:\n{results.to_string(index=False)}"
+    except Exception as e:
+        return f"FastF1 Error: {str(e)}"
 
 def visualize_lap_times(session_id: int, driver_id: str):
     """
@@ -137,11 +159,12 @@ f1_data_engineer = LlmAgent(
     GUIDELINES:
     {SQL_GUIDELINES}
     5. TIME FILTERS: Use '{datetime.now().strftime('%Y-%m-%d')}' as the reference for 'today'. When asked for upcoming sessions, use 'WHERE date >= CURRENT_DATE' or similar.
+    6. LIVE FALLBACK: If a query for a 2024 or 2025 event (results, standings, etc.) via 'query_f1_db' returns "Data: []" (empty results), immediately use 'fetch_fastf1_live_data' to get the latest info.
     
     If you encounter a schema error, check the 'F1_TABLE_METADATA' again and correct your query. 
     Focus on f1_results, f1_drivers, f1_sessions, f1_teams, and f1_standings for most queries.
     """,
-    tools=[query_f1_db],
+    tools=[query_f1_db, fetch_fastf1_live_data],
     model=MODEL,
     generate_content_config=types.GenerateContentConfig(temperature=0)
 )

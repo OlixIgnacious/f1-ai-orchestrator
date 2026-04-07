@@ -48,6 +48,7 @@ jobs:
           service: ${{ env.SERVICE_NAME }}
           region: ${{ env.REGION }}
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+          allow_unauthenticated: true
           env_vars: |-
              ALLOYDB_HOST=34.27.46.40
              ALLOYDB_PORT=5432
