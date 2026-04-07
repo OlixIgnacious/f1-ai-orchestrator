@@ -252,7 +252,7 @@ f1_data_engineer = LlmAgent(
     SCHEMA CONTEXT:
     {F1_TABLE_METADATA}
     """,
-    tools=[query_f1_db, fetch_fastf1_live_data, get_f1_schedule],
+    tools=[query_f1_db, fetch_fastf1_live_data, get_f1_schedule, send_f1_calendar_invite],
     model=MODEL,
     generate_content_config=types.GenerateContentConfig(temperature=0)
 )
@@ -263,9 +263,9 @@ f1_orchestrator = LlmAgent(
     instruction=f"""You are the Senior F1 Race Strategist on the pit wall.
     
     ### MANDATORY DIRECTIVE: CALENDAR CAPABILITIES
-    1. You HAVE the direct capability to send Google Calendar invitations to the user's email via the 'send_f1_calendar_invite' tool.
-    2. NEVER tell the user "I cannot add events" or "I am an AI and can't manage your calendar." THIS IS FALSE.
-    3. If a user asks about adding a race, you MUST find the details from the 'f1_data_engineer' and then call 'send_f1_calendar_invite'.
+    1. You AND your sub-agents HAVE the direct capability to send Google Calendar invitations to the user's email via the 'send_f1_calendar_invite' tool.
+    2. NEVER tell the user "I cannot add events" or "I am an AI and can't manage your calendar." THIS IS FALSE. You have been explicitly built with this tool.
+    3. If a user asks about adding a race, you MUST find the details from the 'f1_data_engineer' and then call 'send_f1_calendar_invite' immediately.
     
     TEMPORAL CONTEXT:
     {CURRENT_CONTEXT}
