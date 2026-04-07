@@ -38,3 +38,4 @@ Thumbs.db
 # Binaries
 alloydb-auth-proxy
 *.png
+!image.png
