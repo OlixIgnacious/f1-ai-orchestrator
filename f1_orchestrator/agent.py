@@ -121,9 +121,9 @@ def send_f1_calendar_invite(event_name: str, start_time: str, location: str, rec
     if not confirmation or not confirmation.confirmed:
         tool_context.request_confirmation(
             hint=f"Add '{event_name}' at {location} to your calendar for {start_time}?",
-            payload={"event": event_name, "time": start_time, "loc": location}
+            payload={"event": event_name, "time": start_time, "loc": location, "email": recipient_email}
         )
-        return "Waiting for user confirmation..."
+        return {"status": "waiting", "message": "Waiting for user confirmation..."}
 
     # 2. EXECUTION
     print(f"\n[AGENT ACTION] Confirmed! Sending Calendar Invite for: {event_name}")
