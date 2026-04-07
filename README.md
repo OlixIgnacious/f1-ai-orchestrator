@@ -33,6 +33,10 @@ Beyond scores and standings, the Orchestrator provides:
 
 ---
 
+![alt text](image.png)
+
+---
+
 ## ☁️ Google Cloud Setup
 
 To host the Orchestrator on Google Cloud, follow these steps:
