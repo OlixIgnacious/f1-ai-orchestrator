@@ -70,5 +70,23 @@ gcloud run deploy f1-orchestrator --source . --region us-central1
 
 ---
 
+## 📅 Calendar Integration Setup
+
+To enable "Direct-Write" capabilities where the bot adds events directly to your calendar:
+
+1.  **Find the Bot's Identity**: Locate the Service Account email in your GCP Console (typically `****************@developer.gserviceaccount.com`).
+2.  **Share your Calendar**:
+    *   Open [Google Calendar](https://calendar.google.com).
+    *   Go to **Settings and sharing** for your primary calendar.
+    *   Add the Service Account email under **"Share with specific people."**
+    *   Set permissions to **"Make changes to events."**
+3.  **The Result**: The bot will now populate your calendar automatically! 
+
+> [!TIP]
+> **No Permission? No Problem!**
+> If you don't share your calendar, the bot intelligently recognizes the permission failure and provides a **Universal One-Click Link** in the chat instead. Clicking this will open your browser with all the race details pre-filled.
+
+---
+
 ## 📈 Data Dictionary
 For technical details on the underlying AlloyDB schema, see the [Data Dictionary](./f1_orchestrator/data_dictionary.md).
