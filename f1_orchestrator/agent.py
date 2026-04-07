@@ -12,6 +12,9 @@ from googleapiclient.discovery import build
 from .schema import F1_TABLE_METADATA
 
 import uuid
+import base64
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # 1. SYSTEM INITIALIZATION
 # Configures FastF1 caching for ephemeral environments (e.g. Cloud Run)
@@ -25,9 +28,13 @@ CURRENT_CONTEXT = f"Today's Date: {datetime.now().strftime('%Y-%m-%d')}"
 
 
 # 3. AUTHENTICATION & CONFIGURATION
-# Added specific scope for Google Calendar API access
+# Added specific scope for Google Calendar and Gmail API access
 credentials, project_id = google.auth.default(
-    scopes=['https://www.googleapis.com/auth/calendar', 'https://www.googleapis.com/auth/cloud-platform']
+    scopes=[
+        'https://www.googleapis.com/auth/calendar', 
+        'https://www.googleapis.com/auth/gmail.send',
+        'https://www.googleapis.com/auth/cloud-platform'
+    ]
 )
 if not credentials.valid:
     credentials.refresh(google.auth.transport.requests.Request())
@@ -140,24 +147,57 @@ def send_f1_calendar_invite(event_name: str, start_time: str, location: str, rec
             'description': f'F1 Session at {location}. Analysis by your AI Strategist.',
             'start': {'dateTime': start_dt.isoformat()},
             'end': {'dateTime': end_dt.isoformat()},
-            'attendees': [
-                {'email': target_email},
-            ],
         }
         
-        print(f"DEBUG: Inserting event into 'primary' calendar...", flush=True)
-        # sendUpdates='all' ensures the email is sent
+        print(f"DEBUG: Attempting direct write to calendar: {target_email}...", flush=True)
+        # Attempt direct write (target_email as calendarId)
         created_event = service.events().insert(
-            calendarId='primary', 
-            body=event_body,
-            sendUpdates='all' 
+            calendarId=target_email, 
+            body=event_body
         ).execute()
         
         print(f"DEBUG: Event created successfully! ID: {created_event.get('id')}", flush=True)
-        return f"Invite sent for {event_name} in {location} to {target_email}! (Event ID: {created_event.get('id')})"
-    except Exception as e:
-        print(f"DEBUG: Calendar Tool Exception: {str(e)}", flush=True)
-        return f"Calendar/Location Error: {str(e)}"
+        return f"Invite added directly to your calendar ({target_email})! (Event ID: {created_event.get('id')})"
+
+    except Exception as calendar_err:
+        print(f"DEBUG: Calendar Direct Write Failed: {str(calendar_err)}", flush=True)
+        print(f"DEBUG: Switching to Gmail Fallback for {target_email}...", flush=True)
+        
+        try:
+            # FALLBACK: GMAIL API
+            gmail_service = build('gmail', 'v1', credentials=credentials)
+            
+            # Create MIME message
+            message = MIMEMultipart()
+            message['to'] = target_email
+            message['subject'] = f"F1 Schedule: {event_name}"
+            
+            body = f"""
+            Hello,
+            
+            I couldn't write directly to your Google Calendar, so I've sent the session details here instead:
+            
+            EVENT: {event_name}
+            TIME: {start_time} (UTC)
+            LOCATION: {location}
+            
+            See you on the track!
+            -- F1 AI Orchestrator
+            """
+            message.attach(MIMEText(body, 'plain'))
+            
+            raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+            gmail_service.users().messages().send(
+                userId='me', 
+                body={'raw': raw_message}
+            ).execute()
+            
+            print(f"DEBUG: Fallback Email sent successfully!", flush=True)
+            return f"I couldn't write to your calendar directly (permissions), so I've sent the session details to your email inbox ({target_email}) instead!"
+            
+        except Exception as gmail_err:
+            print(f"DEBUG: Gmail Fallback also failed: {str(gmail_err)}", flush=True)
+            return f"Calendar & Email Error. Please verify your email settings. Details: {str(calendar_err)}"
 
 def visualize_lap_times(session_id: int, driver_id: str):
     """
