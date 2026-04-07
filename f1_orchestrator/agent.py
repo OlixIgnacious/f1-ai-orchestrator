@@ -10,7 +10,6 @@ from google.adk.tools.mcp_tool import McpToolset
 from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
 from google.genai import types
 from google.adk.tools import ToolContext
-from googleapiclient.discovery import build
 from .schema import F1_TABLE_METADATA
 
 import uuid
@@ -106,49 +105,62 @@ def fetch_fastf1_live_data(year: int, gp_name: str, session_type: str = "R"):
     except Exception as e:
         return f"FastF1 Error: {str(e)}"
 
-def create_f1_calendar_event(event_name: str, start_time: str, tool_context: ToolContext):
+def create_f1_calendar_event(user_name_query: str, event_name: str, start_time: str, tool_context: ToolContext):
     """
-    Adds an F1 event to the user's calendar.
-    - event_name: e.g. 'Bahrain Grand Prix - Race'
-    - start_time: ISO format string, e.g. '2026-04-07T15:00:00Z'
-    Requires explicit user approval in the UI before execution.
+    Adds an F1 event to the user's database-backed calendar.
+    - user_name_query: The name of the user (e.g. 'Olix')
+    - event_name: e.g. 'Miami Grand Prix'
+    - start_time: ISO format string, e.g. '2026-05-03T15:00:00Z'
     """
-    # 1. CHECK FOR CONFIRMATION
-    # The ADK UI will look for this 'tool_confirmation' in the context
-    confirmation = tool_context.tool_confirmation()
-    
-    if not confirmation or not confirmation.confirmed:
-        # This TRIGGERS the pop-up in the ADK UI
-        tool_context.request_confirmation(
-            hint=f"Should I add '{event_name}' to your calendar for {start_time}?",
-            payload={"event": event_name, "time": start_time}
-        )
-        return "Waiting for user confirmation..."
-
-    # 2. EXECUTION (Only runs after user clicks 'Approve' in the UI)
-    print(f"\n[AGENT ACTION] Confirmed! Creating Calendar event: {event_name}")
+    # 1. RESOLVE USER ID
+    print(f"\n[AGENT ACTION] Resolving user: {user_name_query}")
     try:
-        # Use the credentials initialized at the top of the file
-        service = build('calendar', 'v3', credentials=credentials)
+        conn = get_db_connection()
+        cur = conn.cursor()
         
-        # Simple 2-hour duration for F1 sessions
-        from datetime import timedelta
-        # Parse ISO string safely (handling 'Z' or offset)
+        # Search for the user by name (case-insensitive)
+        cur.execute("SELECT id, name, email, fav_driver FROM users WHERE name ILIKE %s", (f"%{user_name_query}%",))
+        matching_users = cur.fetchall()
+        
+        if len(matching_users) == 0:
+            return f"Error: I couldn't find any user matching '{user_name_query}' in the database. Please make sure they are registered."
+        
+        if len(matching_users) > 1:
+            # Ambiguity handling
+            options = "\n".join([f"- {u[1]} ({u[2]}) - Favorite: {u[3]}" for u in matching_users])
+            return f"Ambiguity Error: I found multiple users matching '{user_name_query}':\n{options}\n\nPlease specify which one you mean (e.g., use their full name or email)."
+
+        user_id, exact_name, email, _ = matching_users[0]
+        
+        # 2. CHECK FOR CONFIRMATION
+        confirmation = tool_context.tool_confirmation()
+        if not confirmation or not confirmation.confirmed:
+            tool_context.request_confirmation(
+                hint=f"Confirm adding '{event_name}' to {exact_name}'s calendar?",
+                payload={"user_id": str(user_id), "event": event_name, "time": start_time}
+            )
+            return f"Waiting for confirmation to add to {exact_name}'s calendar..."
+
+        # 3. EXECUTION
+        from datetime import datetime
+        # Parse ISO string safely
         start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-        end_dt = start_dt + timedelta(hours=2)
         
-        event_body = {
-            'summary': event_name,
-            'description': 'Added via F1 AI Orchestrator',
-            'start': {'dateTime': start_dt.isoformat()},
-            'end': {'dateTime': end_dt.isoformat()},
-            'reminders': {'useDefault': True},
-        }
+        cur.execute("""
+            INSERT INTO user_calendar_events (user_id, event_name, event_date)
+            VALUES (%s, %s, %s)
+            RETURNING id
+        """, (user_id, event_name, start_dt))
         
-        created_event = service.events().insert(calendarId='primary', body=event_body).execute()
-        return f"Successfully added '{event_name}' to your calendar! (Event ID: {created_event.get('id')})"
+        new_id = cur.fetchone()[0]
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return f"Successfully added '{event_name}' to {exact_name}'s database-backed calendar! (Internal ID: {new_id})"
+        
     except Exception as e:
-        return f"Calendar Error: {str(e)}"
+        return f"Calendar Tool Error: {str(e)}"
 
 def visualize_lap_times(session_id: int, driver_id: str):
     """
@@ -252,15 +264,19 @@ f1_orchestrator = LlmAgent(
     Deliver elite, data-driven F1 briefings. You translate raw numbers into winning strategies.
     
     DELEGATION PROTOCOL:
-    - For raw numbers, standings, or result lookups: Delegate to 'f1_data_engineer'.
+    - For raw numbers, standings, or result lookups (including checking someone's calendar): Delegate to 'f1_data_engineer'.
     - For predictions, win probabilities, or "What if?" scenarios: Delegate to 'f1_race_predictor'.
-    - For Calendar Management: You have DIRECT access to 'create_f1_calendar_event'. Use it when requested.
+    - For Calendar Management (adding events): Use YOUR 'create_f1_calendar_event' tool.
+    
+    INTERACTIVE USER RESOLUTION:
+    1. If a user asks to "Add a race to my calendar", you MUST ask for their name (or use context if known).
+    2. If the tool returns an "Ambiguity Error" (multiple users found), present the names/emails to the user and ask them to clarify which profile they want to use.
     
     SYNTHESIS WORKFLOW:
     1. Briefing: Start with a concise summary of the requested F1 topic.
     2. Deep Dive: Present key statistics in bullet points.
     3. Strategic Insight: Provide a "Box Box" insight—what does this data mean for the next race?
-    4. Actionable Next Step: If an upcoming race is mentioned, you MUST ask: "Would you like me to add this to your calendar?"
+    4. Actionable Next Step: If an upcoming race is mentioned, you MUST ask: "Would you like me to add this to your database-backed calendar? (Just let me know your name/profile)."
     
     TONE & STYLE:
     - Authoritative, professional, and slightly "Pit Wall" inspired.

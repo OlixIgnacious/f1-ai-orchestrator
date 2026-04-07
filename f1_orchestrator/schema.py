@@ -65,6 +65,7 @@ DATABASE: f1db
 "google_db_advisor_workload_statements","user_id, db_id, query_id, num_calls, total_time, query"
 "g_agg_stat_statements","metric_value, metric_name, metric_type"
 "g_columnar_column_set_stat_statements","force, benefit, relation_name, column_names, database_name, schema_name"
+"user_calendar_events", "id, user_id, event_name, event_date, created_at"
 "g_columnar_schedules","next_time, schedule_name, schedule"
 
 """
