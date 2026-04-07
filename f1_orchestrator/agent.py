@@ -104,14 +104,16 @@ def fetch_fastf1_live_data(year: int, gp_name: str, session_type: str = "R"):
     except Exception as e:
         return f"FastF1 Error: {str(e)}"
 
-def create_f1_calendar_event(event_name: str, start_time: str, location: str, tool_context: ToolContext):
+def send_f1_calendar_invite(event_name: str, start_time: str, location: str, tool_context: ToolContext):
     """
-    Adds an F1 event to the user's calendar with a location and sends an invite.
-    - event_name: e.g. 'Miami Grand Prix'
-    - start_time: ISO format '2026-04-12T15:00:00Z'
+    SYSTEM CAPABILITY: Sends a formal Google Calendar Invitation directly to the user's inbox.
+    Use this tool whenever a user wants to 'add', 'schedule', or 'invite' themselves to an upcoming F1 session.
+    - event_name: Full name of the Grand Prix or Session (e.g., 'Miami Grand Prix - Race')
+    - start_time: ISO 8601 format string (e.g., '2026-05-03T15:00:00Z')
     - location: The circuit or city name (e.g., 'Miami Gardens, USA')
+    Returns a status message once the invitation is queued for delivery.
     """
-    print(f"\n[TOOL: create_f1_calendar_event] Requesting Calendar Invite for: {event_name} at {location}")
+    print(f"\n[TOOL: send_f1_calendar_invite] Requesting Calendar Invite for: {event_name} at {location}")
     # 1. CHECK FOR CONFIRMATION
     confirmation = tool_context.tool_confirmation()
     
@@ -254,9 +256,9 @@ f1_orchestrator = LlmAgent(
     instruction=f"""You are the Senior F1 Race Strategist on the pit wall.
     
     ### MANDATORY DIRECTIVE: CALENDAR CAPABILITIES
-    1. You HAVE the direct capability to send Google Calendar invitations to the user's email via the 'create_f1_calendar_event' tool.
+    1. You HAVE the direct capability to send Google Calendar invitations to the user's email via the 'send_f1_calendar_invite' tool.
     2. NEVER tell the user "I cannot add events" or "I am an AI and can't manage your calendar." THIS IS FALSE.
-    3. If a user asks about adding a race, you MUST find the details from the 'f1_data_engineer' and then call 'create_f1_calendar_event'.
+    3. If a user asks about adding a race, you MUST find the details from the 'f1_data_engineer' and then call 'send_f1_calendar_invite'.
     
     TEMPORAL CONTEXT:
     {CURRENT_CONTEXT}
@@ -264,7 +266,7 @@ f1_orchestrator = LlmAgent(
     DELEGATION PROTOCOL:
     - For raw numbers, standings, or result lookups: Delegate to 'f1_data_engineer'.
     - For predictions or strategy analysis: Delegate to 'f1_race_predictor'.
-    - For ALL Calendar/Email Invites: Use YOUR 'create_f1_calendar_event' tool.
+    - For ALL Calendar/Email Invites: Use YOUR 'send_f1_calendar_invite' tool.
     
     SYNTHESIS WORKFLOW:
     1. Identification: Call 'f1_data_engineer' to find the next/requested race details (Date, Name, Location).
@@ -276,7 +278,7 @@ f1_orchestrator = LlmAgent(
     Authoritative, professional, and slightly "Pit Wall" inspired. Use **bold** for Drivers and Teams.
     """,
     sub_agents=[f1_data_engineer, f1_race_predictor],
-    tools=[visualize_lap_times, create_f1_calendar_event],
+    tools=[visualize_lap_times, send_f1_calendar_invite],
     model=MODEL,
     generate_content_config=types.GenerateContentConfig(
         max_output_tokens=4096,
