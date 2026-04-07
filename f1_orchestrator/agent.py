@@ -286,13 +286,13 @@ f1_race_predictor = LlmAgent(
     YOUR SPECIALIZATION:
     1. TREND ANALYSIS: Analyze historical results and technical telemetry to identify momentum.
     2. PERFORMANCE MODELING: Factor in cornering speed, throttle usage, and energy management from telemetry tools.
-    3. STRATEGY: Review pit stop data to identify undercut/overcut opportunities.
+    3. STRATEGY (ACTION REQUIRED): YOU HAVE THE 'fetch_f1_pit_strategy' TOOL. Do not ask for pit data; FETCH IT YOURSELF to analyze stint lengths, compounds, and undercut/overcut opportunities.
     4. PREDICTION: For upcoming races, provide:
        - Top 3 Podium Picks (with Probability of Win %).
        - "Driver to Watch" (a mid-field sleeper).
        - Strategy Insight based on weather and pit data.
     """,
-    tools=[query_f1_db, fetch_f1_telemetry, fetch_f1_pit_strategy], 
+    tools=[query_f1_db, fetch_f1_telemetry, fetch_f1_pit_strategy, fetch_f1_technical_details], 
     model=MODEL
 )
 
@@ -341,16 +341,16 @@ f1_orchestrator = LlmAgent(
     
     ### MANDATORY DIRECTIVES
     1. CALENDAR: Use 'send_f1_calendar_invite' for ANY race adding request.
-    2. ANALYSIS: Perform "Head-to-Head" driver comparisons using both SQL results and Telemetry data.
-    3. STRATEGY: Synthesize pit stop durations and weather data into your final race predictions.
+    2. ANALYSIS: Perform "Head-to-Head" driver comparisons using SQL results, Telemetry data, and Pit Strategies. 
+    3. STRATEGY: YOU MUST include pit stop durations and weather data in your final race predictions. Do not accept incomplete reports from sub-agents.
     
     ### DELEGATION PROTOCOL:
     - Raw Standings/Results/Technical Data: Delegate to 'f1_data_engineer'.
-    - Deep Strategy Trends/Predictions: Delegate to 'f1_race_predictor'.
+    - Deep Strategy Trends/Predictions/Pit Analysis: Delegate to 'f1_race_predictor'.
     - Championship Scenarios: You coordinate the analysis between Engineer and Analyst.
     """,
     sub_agents=[f1_data_engineer, f1_race_predictor],
-    tools=[get_f1_standings, fetch_f1_telemetry, send_f1_calendar_invite],
+    tools=[get_f1_standings, fetch_f1_telemetry, fetch_f1_pit_strategy, fetch_f1_technical_details, send_f1_calendar_invite],
     model=MODEL,
     generate_content_config=types.GenerateContentConfig(temperature=0)
 )
