@@ -21,7 +21,12 @@ fastf1.Cache.enable_cache(CACHE_DIR)
 # Dynamic context injected into agent prompts to ensure time-relative accuracy.
 def get_current_context():
     now = datetime.now()
-    return f"Today's Date: {now.strftime('%Y-%m-%d')}. SYSTEM RULE: Any F1 race scheduled AFTER this date has NOT occurred yet. Do not provide results or analysis for future sessions."
+    today = now.strftime('%Y-%m-%d')
+    return f"""Today's Date is {today}. 
+    TEMPORAL RULES:
+    1. HISTORY: Any race scheduled ON or BEFORE {today} has already occurred. You MUST provide results and standings for these.
+    2. FUTURE: Only races scheduled AFTER {today} are in the future. Do not simulate results for these.
+    """
 
 
 # 3. AUTHENTICATION & CONFIGURATION
