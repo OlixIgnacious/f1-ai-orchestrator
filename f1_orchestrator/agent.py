@@ -9,6 +9,8 @@ from google.adk.agents import LlmAgent
 from google.adk.tools.mcp_tool import McpToolset
 from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
 from google.genai import types
+from google.adk.tools import ToolContext
+from googleapiclient.discovery import build
 from .schema import F1_TABLE_METADATA
 
 import uuid
@@ -73,6 +75,20 @@ def query_f1_db(sql_query: str):
     except Exception as e:
         return f"Database Error: {str(e)}"
 
+def get_f1_schedule(year: int):
+    """
+    Fetches the full F1 race schedule for a specific year.
+    Use this to find upcoming races, dates, and circuit names.
+    """
+    print(f"\n[AGENT ACTION] Fetching F1 Schedule for {year}")
+    try:
+        schedule = fastf1.get_event_schedule(year)
+        # Select relevant columns for a concise overview
+        overview = schedule[['RoundNumber', 'EventName', 'Location', 'EventDate', 'EventFormat']]
+        return f"F1 Schedule for {year}:\n{overview.to_string(index=False)}"
+    except Exception as e:
+        return f"Schedule Error: {str(e)}"
+
 def fetch_fastf1_live_data(year: int, gp_name: str, session_type: str = "R"):
     """
     Fetches real-time or recent F1 session data using the FastF1 API.
@@ -89,6 +105,50 @@ def fetch_fastf1_live_data(year: int, gp_name: str, session_type: str = "R"):
         return f"Results for {year} {gp_name} {session_type}:\n{results.to_string(index=False)}"
     except Exception as e:
         return f"FastF1 Error: {str(e)}"
+
+def create_f1_calendar_event(event_name: str, start_time: str, tool_context: ToolContext):
+    """
+    Adds an F1 event to the user's calendar.
+    - event_name: e.g. 'Bahrain Grand Prix - Race'
+    - start_time: ISO format string, e.g. '2026-04-07T15:00:00Z'
+    Requires explicit user approval in the UI before execution.
+    """
+    # 1. CHECK FOR CONFIRMATION
+    # The ADK UI will look for this 'tool_confirmation' in the context
+    confirmation = tool_context.tool_confirmation()
+    
+    if not confirmation or not confirmation.confirmed:
+        # This TRIGGERS the pop-up in the ADK UI
+        tool_context.request_confirmation(
+            hint=f"Should I add '{event_name}' to your calendar for {start_time}?",
+            payload={"event": event_name, "time": start_time}
+        )
+        return "Waiting for user confirmation..."
+
+    # 2. EXECUTION (Only runs after user clicks 'Approve' in the UI)
+    print(f"\n[AGENT ACTION] Confirmed! Creating Calendar event: {event_name}")
+    try:
+        # Use the credentials initialized at the top of the file
+        service = build('calendar', 'v3', credentials=credentials)
+        
+        # Simple 2-hour duration for F1 sessions
+        from datetime import timedelta
+        # Parse ISO string safely (handling 'Z' or offset)
+        start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+        end_dt = start_dt + timedelta(hours=2)
+        
+        event_body = {
+            'summary': event_name,
+            'description': 'Added via F1 AI Orchestrator',
+            'start': {'dateTime': start_dt.isoformat()},
+            'end': {'dateTime': end_dt.isoformat()},
+            'reminders': {'useDefault': True},
+        }
+        
+        created_event = service.events().insert(calendarId='primary', body=event_body).execute()
+        return f"Successfully added '{event_name}' to your calendar! (Event ID: {created_event.get('id')})"
+    except Exception as e:
+        return f"Calendar Error: {str(e)}"
 
 def visualize_lap_times(session_id: int, driver_id: str):
     """
@@ -175,7 +235,7 @@ f1_data_engineer = LlmAgent(
     If you encounter a schema error, check the 'F1_TABLE_METADATA' again and correct your query. 
     Focus on f1_results, f1_drivers, f1_sessions, f1_teams, and f1_standings for most queries.
     """,
-    tools=[query_f1_db, fetch_fastf1_live_data],
+    tools=[query_f1_db, fetch_fastf1_live_data, get_f1_schedule],
     model=MODEL,
     generate_content_config=types.GenerateContentConfig(temperature=0)
 )
@@ -199,6 +259,7 @@ f1_orchestrator = LlmAgent(
     1. Briefing: Start with a concise summary of the requested F1 topic.
     2. Deep Dive: Present key statistics in bullet points.
     3. Strategic Insight: Provide a "Box Box" insight—what does this data mean for the next race?
+    4. Actionable Next Step: If an upcoming race is mentioned, proactively ask: "Would you like me to add this to your calendar?"
     
     TONE & STYLE:
     - Authoritative, professional, and slightly "Pit Wall" inspired.
@@ -206,7 +267,7 @@ f1_orchestrator = LlmAgent(
     - Maintain extreme accuracy.
     """,
     sub_agents=[f1_data_engineer, f1_race_predictor],
-    tools=[visualize_lap_times],
+    tools=[visualize_lap_times, create_f1_calendar_event],
     model=MODEL,
     generate_content_config=types.GenerateContentConfig(
         max_output_tokens=4096,
