@@ -13,35 +13,33 @@ from .schema import F1_TABLE_METADATA
 
 import uuid
 
-# 0.5 FASTF1 INITIALIZATION
-# Use /tmp/fastf1_cache for ephemeral cloud storage (effective on Cloud Run)
+# 1. SYSTEM INITIALIZATION
+# Configures FastF1 caching for ephemeral environments (e.g. Cloud Run)
 CACHE_DIR = '/tmp/fastf1_cache'
 os.makedirs(CACHE_DIR, exist_ok=True)
 fastf1.Cache.enable_cache(CACHE_DIR)
 
-
-# 0. TEMPORAL CONTEXT
-# Injects the current date into agent instructions for time-aware queries.
+# 2. TEMPORAL CONTEXT
+# Injects current date into agent prompts to ensure time-relative queries are accurate.
 CURRENT_CONTEXT = f"Today's Date: {datetime.now().strftime('%Y-%m-%d')}"
 
 
-# 1. AUTHENTICATION
+# 3. AUTHENTICATION & CONFIGURATION
 credentials, project_id = google.auth.default()
 if not credentials.valid:
     credentials.refresh(google.auth.transport.requests.Request())
 
-# 2. CONFIG
 REGION = os.getenv("REGION")
 CLUSTER = os.getenv("ALLOYDB_CLUSTER")
 INSTANCE = os.getenv("ALLOYDB_INSTANCE")
-# The user specified gemini-3.1-flash-lite. In early 2026, this is likely their intended model.
 MODEL = "gemini-2.5-flash" 
 
+# 4. SYSTEM TOOLS (CORE CAPABILITIES)
 
 def query_f1_db(sql_query: str):
     """
-    Executes a SQL query against the F1 AlloyDB (f1db).
-    Use this for driver stats, race results, and lap times.
+    SYSTEM CAPABILITY: Executes a SQL query against the F1 AlloyDB (f1db).
+    Use this for driver stats, historical race results, standings, and telemetry lookups for Seasons < 2025.
     """
     print(f"\n[TOOL: query_f1_db] Executing SQL: {sql_query}")
     try:
@@ -75,8 +73,9 @@ def query_f1_db(sql_query: str):
 
 def get_f1_schedule(year: int):
     """
-    Fetches the full F1 race schedule for a specific year.
-    Use this to find upcoming races, dates, and circuit names.
+    SYSTEM CAPABILITY: Fetches the full F1 race schedule, dates, and locations for a specific year.
+    Use this tool to discover upcoming races, identify Grand Prix names, and confirm circuit names.
+    - year: The calendar year to look up (e.g. 2024, 2025, 2026).
     """
     print(f"\n[TOOL: get_f1_schedule] Fetching F1 Schedule for {year}")
     try:
@@ -89,10 +88,11 @@ def get_f1_schedule(year: int):
 
 def fetch_fastf1_live_data(year: int, gp_name: str, session_type: str = "R"):
     """
-    Fetches real-time or recent F1 session data using the FastF1 API.
-    Use this as a fallback if the local database (f1db) is missing 2024+ data.
-    - gp_name: e.g. 'Bahrain', 'Saudi Arabia'
-    - session_type: 'R' (Race), 'Q' (Qualifying), 'S' (Sprint), 'FP1', 'FP2', 'FP3'
+    SYSTEM CAPABILITY: Fetches real-time or recent F1 session data using the live FastF1 API.
+    Use this tool as a fallback if the local database (f1db) is missing 2025+ data.
+    - year: e.g. 2024, 2025.
+    - gp_name: e.g. 'Bahrain', 'Saudi Arabia'.
+    - session_type: 'R' (Race), 'Q' (Qualifying), 'S' (Sprint), 'FP1', 'FP2', 'FP3'.
     """
     print(f"\n[TOOL: fetch_fastf1_live_data] Fetching FastF1 data: {year} {gp_name} {session_type}")
     try:
@@ -104,16 +104,17 @@ def fetch_fastf1_live_data(year: int, gp_name: str, session_type: str = "R"):
     except Exception as e:
         return f"FastF1 Error: {str(e)}"
 
-def send_f1_calendar_invite(event_name: str, start_time: str, location: str, tool_context: ToolContext):
+def send_f1_calendar_invite(event_name: str, start_time: str, location: str, recipient_email: str, tool_context: ToolContext):
     """
-    SYSTEM CAPABILITY: Sends a formal Google Calendar Invitation directly to the user's inbox.
+    SYSTEM CAPABILITY: Sends a formal Google Calendar Invitation directly to a specific email inbox.
     Use this tool whenever a user wants to 'add', 'schedule', or 'invite' themselves to an upcoming F1 session.
     - event_name: Full name of the Grand Prix or Session (e.g., 'Miami Grand Prix - Race')
     - start_time: ISO 8601 format string (e.g., '2026-05-03T15:00:00Z')
     - location: The circuit or city name (e.g., 'Miami Gardens, USA')
+    - recipient_email: The email address that should receive the invitation.
     Returns a status message once the invitation is queued for delivery.
     """
-    print(f"\n[TOOL: send_f1_calendar_invite] Requesting Calendar Invite for: {event_name} at {location}")
+    print(f"\n[TOOL: send_f1_calendar_invite] Requesting Calendar Invite for: {event_name} at {location} for {recipient_email}")
     # 1. CHECK FOR CONFIRMATION
     confirmation = tool_context.tool_confirmation()
     
@@ -133,7 +134,8 @@ def send_f1_calendar_invite(event_name: str, start_time: str, location: str, too
         start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
         end_dt = start_dt + timedelta(hours=2)
         
-        USER_EMAIL = os.getenv("USER_EMAIL", "ashwini.sharma@example.com")
+        # Use provided email, fallback to environment default
+        target_email = recipient_email if recipient_email else os.getenv("USER_EMAIL", "ashwini.sharma@example.com")
         
         event_body = {
             'summary': event_name,
@@ -142,7 +144,7 @@ def send_f1_calendar_invite(event_name: str, start_time: str, location: str, too
             'start': {'dateTime': start_dt.isoformat()},
             'end': {'dateTime': end_dt.isoformat()},
             'attendees': [
-                {'email': USER_EMAIL},
+                {'email': target_email},
             ],
         }
         
@@ -159,8 +161,11 @@ def send_f1_calendar_invite(event_name: str, start_time: str, location: str, too
 
 def visualize_lap_times(session_id: int, driver_id: str):
     """
-    Generates a line chart of lap times for a specific driver in a session.
-    Saves as a PNG and returns the absolute file path.
+    SYSTEM CAPABILITY: Generates a professional line chart of lap times for a specific driver.
+    Use this tool to visualize performance trends and driver consistency across a session.
+    - session_id: Internal session ID integer.
+    - driver_id: Driver's unique ID or Code.
+    Saves a PNG chart and returns the absolute file path for display.
     """
     print(f"\n[TOOL: visualize_lap_times] Visualizing status for Driver {driver_id}")
     try:
@@ -194,7 +199,9 @@ def visualize_lap_times(session_id: int, driver_id: str):
     except Exception as e:
         return f"Visualization Error: {str(e)}"
 
-# THE PREDICTIVE SPECIALIST
+# 5. AGENT DEFINITIONS (MULTI-AGENT SWARM)
+
+# SPECIALIST: THE PREDICTIVE ANALYST
 f1_race_predictor = LlmAgent(
     name="f1_race_predictor",
     instruction="""You are the AI Performance & Strategy Analyst. Your goal is to predict race outcomes based on data.
@@ -215,7 +222,7 @@ f1_race_predictor = LlmAgent(
     model=MODEL
 )
 
-# 2. SCHEMA DEFINITION (Imported from schema.py for full context)
+# GUIDELINES FOR DATA ENGINEERING
 SQL_GUIDELINES = """
 SQL Best Practices for F1 Data:
 1. JOINS: Always join 'f1_results' with 'f1_drivers' (on driver_id) and 'f1_teams' (on team_id) to return names instead of IDs.
@@ -224,7 +231,7 @@ SQL Best Practices for F1 Data:
 4. ORDERING: Order results logically (e.g., position ASC, points DESC, date DESC).
 """
 
-# 4. SUB-AGENT (The Data Specialist)
+# SPECIALIST: THE DATA ENGINEER
 f1_data_engineer = LlmAgent(
     name="f1_data_engineer",
     instruction=f"""You are the F1 Data Engineering Lead. You are the source of truth for all telemetry, results, and standings.
@@ -233,9 +240,9 @@ f1_data_engineer = LlmAgent(
     {CURRENT_CONTEXT}
     
     HANDLING DATA SOURCES:
-    1. PRIMARY (f1db): Use 'query_f1_db' for historical data (Seasons < 2024).
+    1. PRIMARY (f1db): Use 'query_f1_db' for historical data (Seasons < 2026).
     2. FALLBACK (FastF1): 
-       - If a query for a 2024+ event or schedule returns empty:
+       - If a query schedule returns empty:
        - Use 'get_f1_schedule(year)' to find the calendar and upcoming races.
        - Use 'fetch_fastf1_live_data' for specific session results.
     
@@ -250,7 +257,7 @@ f1_data_engineer = LlmAgent(
     generate_content_config=types.GenerateContentConfig(temperature=0)
 )
 
-# 5. PRIMARY ORCHESTRATOR
+# 6. ORCHESTRATION LAYER (THE HEAD OF STRATEGY)
 f1_orchestrator = LlmAgent(
     name="race_strategist",
     instruction=f"""You are the Senior F1 Race Strategist on the pit wall.
@@ -268,11 +275,13 @@ f1_orchestrator = LlmAgent(
     - For predictions or strategy analysis: Delegate to 'f1_race_predictor'.
     - For ALL Calendar/Email Invites: Use YOUR 'send_f1_calendar_invite' tool.
     
-    SYNTHESIS WORKFLOW:
+    WORKFLOW & EXECUTION:
     1. Identification: Call 'f1_data_engineer' to find the next/requested race details (Date, Name, Location).
     2. Briefing: Present the race details (Date, Time, Circuit).
-    3. Strategic Insight: Provide a "Box Box" insight.
-    4. Actionable Next Step: You MUST ask: "Would you like me to send a Google Calendar invite for this race to your email?"
+    3. Actionable Next Step: You MUST ask: "Would you like me to send a Google Calendar invite for this race to your email?"
+    4. EXECUTION: If the user says "Yes" or provides an email:
+       - You MUST call 'send_f1_calendar_invite' tool.
+       - NEVER report success until the tool returns a confirmation string.
     
     TONE:
     Authoritative, professional, and slightly "Pit Wall" inspired. Use **bold** for Drivers and Teams.
@@ -286,5 +295,6 @@ f1_orchestrator = LlmAgent(
     )
 )
 
-# ADK look for 'root_agent' by default
+# 7. EXPORT ENTRY POINT
+# The ADK Runner looks for 'root_agent' to begin execution.
 root_agent = f1_orchestrator
