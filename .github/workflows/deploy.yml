@@ -62,6 +62,7 @@ jobs:
              GOOGLE_CLOUD_PROJECT=f1-command-center-dev
              GOOGLE_CLOUD_LOCATION=us-central1
              USER_EMAIL=ashwini.sharma0807@gmail.com
+          flags: '--memory 1Gi'
           # Map Secrets from Secret Manager
           secrets: |-
             ALLOYDB_PASSWORD=ALLOYDB_PASSWORD:latest
