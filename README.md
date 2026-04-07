@@ -33,6 +33,31 @@ Beyond scores and standings, the Orchestrator provides:
 
 ---
 
+## ☁️ Google Cloud Setup
+
+To host the Orchestrator on Google Cloud, follow these steps:
+
+### 1. Project & APIs
+1.  Create or select a project in the [GCP Console](https://console.cloud.google.com).
+2.  Enable the following APIs:
+    *   **Cloud Run** (for hosting the bot)
+    *   **AlloyDB API** (for the database)
+    *   **Vertex AI API** (for the Gemini model)
+    *   **Google Calendar API** (for scheduling)
+
+### 2. AlloyDB Configuration
+1.  Create an **AlloyDB Cluster & Instance**.
+2.  In the **Connection** settings, ensure your instance is accessible (either via Public IP or VPC peering).
+3.  Create a database named `f1db` and a user with `ALLOYDB_PASSWORD`.
+
+### 3. Service Account Permissions
+The identity running your Cloud Run service (the "Service Account") needs the following IAM roles:
+*   `AlloyDB Client` (to connect to the database)
+*   `Vertex AI User` (to run the Gemini model)
+*   `Logs Writer` (for diagnostic logging)
+
+---
+
 ## 🚀 Getting Started
 
 ### 1. Environment Configuration
