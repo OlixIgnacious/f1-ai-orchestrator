@@ -4,12 +4,11 @@ import google.auth
 import fastf1
 import matplotlib.pyplot as plt
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from google.adk.agents import LlmAgent
-from google.adk.tools.mcp_tool import McpToolset
-from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
 from google.genai import types
 from google.adk.tools import ToolContext
+from googleapiclient.discovery import build
 from .schema import F1_TABLE_METADATA
 
 import uuid
@@ -105,62 +104,55 @@ def fetch_fastf1_live_data(year: int, gp_name: str, session_type: str = "R"):
     except Exception as e:
         return f"FastF1 Error: {str(e)}"
 
-def create_f1_calendar_event(user_name_query: str, event_name: str, start_time: str, tool_context: ToolContext):
+def create_f1_calendar_event(event_name: str, start_time: str, location: str, tool_context: ToolContext):
     """
-    Adds an F1 event to the user's database-backed calendar.
-    - user_name_query: The name of the user (e.g. 'Olix')
+    Adds an F1 event to the user's calendar with a location and sends an invite.
     - event_name: e.g. 'Miami Grand Prix'
-    - start_time: ISO format string, e.g. '2026-05-03T15:00:00Z'
+    - start_time: ISO format '2026-04-12T15:00:00Z'
+    - location: The circuit or city name (e.g., 'Miami Gardens, USA')
     """
-    # 1. RESOLVE USER ID
-    print(f"\n[AGENT ACTION] Resolving user: {user_name_query}")
+    # 1. CHECK FOR CONFIRMATION
+    confirmation = tool_context.tool_confirmation()
+    
+    if not confirmation or not confirmation.confirmed:
+        tool_context.request_confirmation(
+            hint=f"Add '{event_name}' at {location} to your calendar for {start_time}?",
+            payload={"event": event_name, "time": start_time, "loc": location}
+        )
+        return "Waiting for user confirmation..."
+
+    # 2. EXECUTION
+    print(f"\n[AGENT ACTION] Confirmed! Sending Calendar Invite for: {event_name}")
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
+        service = build('calendar', 'v3', credentials=credentials)
         
-        # Search for the user by name (case-insensitive)
-        cur.execute("SELECT id, name, email, fav_driver FROM users WHERE name ILIKE %s", (f"%{user_name_query}%",))
-        matching_users = cur.fetchall()
-        
-        if len(matching_users) == 0:
-            return f"Error: I couldn't find any user matching '{user_name_query}' in the database. Please make sure they are registered."
-        
-        if len(matching_users) > 1:
-            # Ambiguity handling
-            options = "\n".join([f"- {u[1]} ({u[2]}) - Favorite: {u[3]}" for u in matching_users])
-            return f"Ambiguity Error: I found multiple users matching '{user_name_query}':\n{options}\n\nPlease specify which one you mean (e.g., use their full name or email)."
-
-        user_id, exact_name, email, _ = matching_users[0]
-        
-        # 2. CHECK FOR CONFIRMATION
-        confirmation = tool_context.tool_confirmation()
-        if not confirmation or not confirmation.confirmed:
-            tool_context.request_confirmation(
-                hint=f"Confirm adding '{event_name}' to {exact_name}'s calendar?",
-                payload={"user_id": str(user_id), "event": event_name, "time": start_time}
-            )
-            return f"Waiting for confirmation to add to {exact_name}'s calendar..."
-
-        # 3. EXECUTION
-        from datetime import datetime
-        # Parse ISO string safely
+        # Calculate end time (standard 2h duration)
         start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+        end_dt = start_dt + timedelta(hours=2)
         
-        cur.execute("""
-            INSERT INTO user_calendar_events (user_id, event_name, event_date)
-            VALUES (%s, %s, %s)
-            RETURNING id
-        """, (user_id, event_name, start_dt))
+        USER_EMAIL = os.getenv("USER_EMAIL", "ashwini.sharma@example.com")
         
-        new_id = cur.fetchone()[0]
-        conn.commit()
-        cur.close()
-        conn.close()
+        event_body = {
+            'summary': event_name,
+            'location': location,
+            'description': f'F1 Session at {location}. Analysis by your AI Strategist.',
+            'start': {'dateTime': start_dt.isoformat()},
+            'end': {'dateTime': end_dt.isoformat()},
+            'attendees': [
+                {'email': USER_EMAIL},
+            ],
+        }
         
-        return f"Successfully added '{event_name}' to {exact_name}'s database-backed calendar! (Internal ID: {new_id})"
+        # sendUpdates='all' ensures the email is sent
+        created_event = service.events().insert(
+            calendarId='primary', 
+            body=event_body,
+            sendUpdates='all' 
+        ).execute()
         
+        return f"Invite sent for {event_name} in {location}! Check your inbox. (Event ID: {created_event.get('id')})"
     except Exception as e:
-        return f"Calendar Tool Error: {str(e)}"
+        return f"Calendar/Location Error: {str(e)}"
 
 def visualize_lap_times(session_id: int, driver_id: str):
     """
@@ -236,16 +228,18 @@ f1_data_engineer = LlmAgent(
     TEMPORAL CONTEXT:
     {CURRENT_CONTEXT}
     
+    HANDLING DATA SOURCES:
+    1. PRIMARY (f1db): Use 'query_f1_db' for historical data (Seasons < 2024).
+    2. FALLBACK (FastF1): 
+       - If a query for a 2024+ event or schedule returns empty:
+       - Use 'get_f1_schedule(year)' to find the calendar and upcoming races.
+       - Use 'fetch_fastf1_live_data' for specific session results.
+    
+    SQL GUIDELINES:
+    {SQL_GUIDELINES}
+    
     SCHEMA CONTEXT:
     {F1_TABLE_METADATA}
-    
-    GUIDELINES:
-    {SQL_GUIDELINES}
-    5. TIME FILTERS: Use '{datetime.now().strftime('%Y-%m-%d')}' as the reference for 'today'. When asked for upcoming sessions, use 'WHERE date >= CURRENT_DATE' or similar.
-    6. LIVE FALLBACK: If a query for a 2024 or 2025 event (results, standings, etc.) via 'query_f1_db' returns "Data: []" (empty results), immediately use 'fetch_fastf1_live_data' to get the latest info.
-    
-    If you encounter a schema error, check the 'F1_TABLE_METADATA' again and correct your query. 
-    Focus on f1_results, f1_drivers, f1_sessions, f1_teams, and f1_standings for most queries.
     """,
     tools=[query_f1_db, fetch_fastf1_live_data, get_f1_schedule],
     model=MODEL,
@@ -255,33 +249,30 @@ f1_data_engineer = LlmAgent(
 # 5. PRIMARY ORCHESTRATOR
 f1_orchestrator = LlmAgent(
     name="race_strategist",
-    instruction=f"""You are the Senior F1 Race Strategist. You are the "Head of Strategy" on the pit wall, orchestrating insights for the Team Principal.
+    instruction=f"""You are the Senior F1 Race Strategist on the pit wall. Your goal is to orchestrate elite F1 briefings.
+    
+    HARD CAPABILITY - CALENDAR INVITES:
+    You HAVE the capability to send Google Calendar invitations directly to the user's email.
+    - NEVER say "I cannot directly add events" or "I cannot add to your calendar."
+    - ALWAYS use the 'create_f1_calendar_event' tool when requested.
+    - If a user asks to "add the next race", you MUST first ask the 'f1_data_engineer' to find the next race details (Date, Name, Location), then call 'create_f1_calendar_event'.
     
     TEMPORAL CONTEXT:
     {CURRENT_CONTEXT}
     
-    YOUR MISSION:
-    Deliver elite, data-driven F1 briefings. You translate raw numbers into winning strategies.
-    
     DELEGATION PROTOCOL:
-    - For raw numbers, standings, or result lookups (including checking someone's calendar): Delegate to 'f1_data_engineer'.
-    - For predictions, win probabilities, or "What if?" scenarios: Delegate to 'f1_race_predictor'.
-    - For Calendar Management (adding events): Use YOUR 'create_f1_calendar_event' tool.
-    
-    INTERACTIVE USER RESOLUTION:
-    1. If a user asks to "Add a race to my calendar", you MUST ask for their name (or use context if known).
-    2. If the tool returns an "Ambiguity Error" (multiple users found), present the names/emails to the user and ask them to clarify which profile they want to use.
+    - For raw numbers, standings, or result lookups: Delegate to 'f1_data_engineer'.
+    - For predictions or strategy analysis: Delegate to 'f1_race_predictor'.
+    - For ALL Calendar/Email Invites: Use YOUR 'create_f1_calendar_event' tool.
     
     SYNTHESIS WORKFLOW:
-    1. Briefing: Start with a concise summary of the requested F1 topic.
-    2. Deep Dive: Present key statistics in bullet points.
-    3. Strategic Insight: Provide a "Box Box" insight—what does this data mean for the next race?
-    4. Actionable Next Step: If an upcoming race is mentioned, you MUST ask: "Would you like me to add this to your database-backed calendar? (Just let me know your name/profile)."
+    1. Briefing: Start with a concise summary.
+    2. Strategic Insight: Provide a "Box Box" insight.
+    3. Actionable Next Step: You MUST ask: "Would you like me to send a Google Calendar invite for this race to your email?"
     
     TONE & STYLE:
     - Authoritative, professional, and slightly "Pit Wall" inspired.
     - Use **bold** for Drivers and Teams.
-    - Maintain extreme accuracy.
     """,
     sub_agents=[f1_data_engineer, f1_race_predictor],
     tools=[visualize_lap_times, create_f1_calendar_event],
