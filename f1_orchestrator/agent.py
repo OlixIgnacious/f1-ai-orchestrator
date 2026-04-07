@@ -124,6 +124,9 @@ def send_f1_calendar_invite(event_name: str, start_time: str, location: str, rec
     # EXECUTION
     try:
         import sys
+        # Use provided email, fallback to environment default
+        target_email = recipient_email if recipient_email else os.getenv("USER_EMAIL", "ashwini.sharma@example.com")
+        
         print(f"DEBUG: Initializing Google Calendar Service for {target_email}...", flush=True)
         service = build('calendar', 'v3', credentials=credentials)
         
