@@ -114,22 +114,19 @@ def send_f1_calendar_invite(event_name: str, start_time: str, location: str, rec
     - recipient_email: The email address that should receive the invitation.
     Returns a status message once the invitation is queued for delivery.
     """
-    print(f"\n[TOOL: send_f1_calendar_invite] Requesting Calendar Invite for: {event_name} at {location} for {recipient_email}")
-    # 1. CHECK FOR CONFIRMATION
-    confirmation = tool_context.tool_confirmation
+def send_f1_calendar_invite(event_name: str, start_time: str, location: str, recipient_email: str, tool_context: ToolContext):
+    """
+    SYSTEM CAPABILITY: Sends a formal Google Calendar Invitation directly to a specific email inbox.
+    Use this tool whenever a user wants to 'add', 'schedule', or 'invite' themselves to an upcoming F1 session.
+    - event_name: Full name of the Grand Prix or Session (e.g., 'Miami Grand Prix - Race')
+    - start_time: ISO 8601 format string (e.g., '2026-05-03T15:00:00Z')
+    - location: The circuit or city name (e.g., 'Miami Gardens, USA')
+    - recipient_email: The email address that should receive the invitation.
+    Returns a status message once the invitation is queued for delivery.
+    """
+    print(f"\n[TOOL: send_f1_calendar_invite] Sending Calendar Invite for: {event_name} at {location} for {recipient_email}")
     
-    if not confirmation or not confirmation.confirmed:
-        tool_context.request_confirmation(
-            hint=f"Add '{event_name}' at {location} to your calendar for {start_time}?",
-            payload={"event": event_name, "time": start_time, "loc": location, "email": recipient_email}
-        )
-        return {
-            "status": "HALTED_FOR_CONFIRMATION", 
-            "message": "CRITICAL: The invitation has NOT been sent. User must click the 'Approve' button in the UI first. Agent MUST stop talking now."
-        }
-
-    # 2. EXECUTION
-    print(f"\n[AGENT ACTION] Confirmed! Sending Calendar Invite for: {event_name}")
+    # EXECUTION
     try:
         service = build('calendar', 'v3', credentials=credentials)
         
@@ -158,7 +155,7 @@ def send_f1_calendar_invite(event_name: str, start_time: str, location: str, rec
             sendUpdates='all' 
         ).execute()
         
-        return f"Invite sent for {event_name} in {location}! Check your inbox. (Event ID: {created_event.get('id')})"
+        return f"Invite sent for {event_name} in {location} to {target_email}! (Event ID: {created_event.get('id')})"
     except Exception as e:
         return f"Calendar/Location Error: {str(e)}"
 
@@ -254,10 +251,6 @@ f1_data_engineer = LlmAgent(
     
     SCHEMA CONTEXT:
     {F1_TABLE_METADATA}
-    
-    CRITICAL FLOW CONTROL:
-    - If a tool returns 'HALTED_FOR_CONFIRMATION', look at the 'message' and STOP immediately.
-    - NEVER tell the user 'Invite sent' if the status is 'HALTED_FOR_CONFIRMATION'.
     """,
     tools=[query_f1_db, fetch_fastf1_live_data, get_f1_schedule, send_f1_calendar_invite],
     model=MODEL,
@@ -289,17 +282,14 @@ f1_orchestrator = LlmAgent(
     CRITICAL FLOW CONTROL:
     - If a tool returns 'HALTED_FOR_CONFIRMATION', you MUST terminate your turn immediately without generating any text. The system will show the user a button to Approve/Reject.
     - ONLY report success AFTER the tool returns a message starting with 'Invite sent'.
-
+    
     TONE:
     Authoritative, professional, and slightly "Pit Wall" inspired. Use **bold** for Drivers and Teams.
     """,
     sub_agents=[f1_data_engineer, f1_race_predictor],
     tools=[visualize_lap_times, send_f1_calendar_invite],
     model=MODEL,
-    generate_content_config=types.GenerateContentConfig(
-        max_output_tokens=4096,
-        temperature=0.2
-    )
+    generate_content_config=types.GenerateContentConfig(temperature=0)
 )
 
 # 7. EXPORT ENTRY POINT
