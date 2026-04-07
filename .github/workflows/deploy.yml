@@ -1,0 +1,65 @@
+name: Build and Deploy to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  PROJECT_ID: f1-command-center-dev
+  REGION: us-central1
+  SERVICE_NAME: f1-orchestrator
+  REPOSITORY: f1-command-center
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Google Auth
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          # Note: Must create this Workload Identity Provider in GCP first
+          workload_identity_provider: 'projects/521055768390/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'f1-deployer@f1-command-center-dev.iam.gserviceaccount.com'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Authorize Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      - name: Build and Push Container
+        run: |-
+          docker build -t "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}" .
+          docker push "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+          env_vars: |-
+             ALLOYDB_HOST=127.0.0.1
+             ALLOYDB_PORT=5432
+             ALLOYDB_DATABASE=f1db
+             ALLOYDB_USER=postgres
+             GOOGLE_GENAI_USE_VERTEXAI=true
+             GOOGLE_CLOUD_PROJECT=f1-command-center-dev
+             GOOGLE_CLOUD_LOCATION=us-central1
+          # Map Secrets from Secret Manager
+          secrets: |-
+            ALLOYDB_PASSWORD=ALLOYDB_PASSWORD:latest
+            TOKEN_ENCRYPTION_KEY=TOKEN_ENCRYPTION_KEY:latest
+            GOOGLE_OAUTH_CLIENT_SECRET=GOOGLE_OAUTH_CLIENT_SECRET:latest
+          # Attach the AlloyDB instance (connector)
+          flags: --add-cloudsql-instances=projects/f1-command-center-dev/locations/us-central1/clusters/f1-cluster/instances/f1-primary
