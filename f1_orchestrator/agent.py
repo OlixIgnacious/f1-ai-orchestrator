@@ -25,7 +25,10 @@ CURRENT_CONTEXT = f"Today's Date: {datetime.now().strftime('%Y-%m-%d')}"
 
 
 # 3. AUTHENTICATION & CONFIGURATION
-credentials, project_id = google.auth.default()
+# Added specific scope for Google Calendar API access
+credentials, project_id = google.auth.default(
+    scopes=['https://www.googleapis.com/auth/calendar', 'https://www.googleapis.com/auth/cloud-platform']
+)
 if not credentials.valid:
     credentials.refresh(google.auth.transport.requests.Request())
 
@@ -113,14 +116,6 @@ def send_f1_calendar_invite(event_name: str, start_time: str, location: str, rec
     - location: The circuit or city name (e.g., 'Miami Gardens, USA')
     - recipient_email: The email address that should receive the invitation.
     Returns a status message once the invitation is queued for delivery.
-    """
-def send_f1_calendar_invite(event_name: str, start_time: str, location: str, recipient_email: str, tool_context: ToolContext):
-    """
-    SYSTEM CAPABILITY: Sends a formal Google Calendar Invitation directly to a specific email inbox.
-    Use this tool whenever a user wants to 'add', 'schedule', or 'invite' themselves to an upcoming F1 session.
-    - event_name: Full name of the Grand Prix or Session (e.g., 'Miami Grand Prix - Race')
-    - start_time: ISO 8601 format string (e.g., '2026-05-03T15:00:00Z')
-    - location: The circuit or city name (e.g., 'Miami Gardens, USA')
     - recipient_email: The email address that should receive the invitation.
     Returns a status message once the invitation is queued for delivery.
     """
@@ -128,14 +123,13 @@ def send_f1_calendar_invite(event_name: str, start_time: str, location: str, rec
     
     # EXECUTION
     try:
+        import sys
+        print(f"DEBUG: Initializing Google Calendar Service for {target_email}...", flush=True)
         service = build('calendar', 'v3', credentials=credentials)
         
         # Calculate end time (standard 2h duration)
         start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
         end_dt = start_dt + timedelta(hours=2)
-        
-        # Use provided email, fallback to environment default
-        target_email = recipient_email if recipient_email else os.getenv("USER_EMAIL", "ashwini.sharma@example.com")
         
         event_body = {
             'summary': event_name,
@@ -148,6 +142,7 @@ def send_f1_calendar_invite(event_name: str, start_time: str, location: str, rec
             ],
         }
         
+        print(f"DEBUG: Inserting event into 'primary' calendar...", flush=True)
         # sendUpdates='all' ensures the email is sent
         created_event = service.events().insert(
             calendarId='primary', 
@@ -155,8 +150,10 @@ def send_f1_calendar_invite(event_name: str, start_time: str, location: str, rec
             sendUpdates='all' 
         ).execute()
         
+        print(f"DEBUG: Event created successfully! ID: {created_event.get('id')}", flush=True)
         return f"Invite sent for {event_name} in {location} to {target_email}! (Event ID: {created_event.get('id')})"
     except Exception as e:
+        print(f"DEBUG: Calendar Tool Exception: {str(e)}", flush=True)
         return f"Calendar/Location Error: {str(e)}"
 
 def visualize_lap_times(session_id: int, driver_id: str):
@@ -275,13 +272,9 @@ f1_orchestrator = LlmAgent(
     - For predictions or strategy analysis: Delegate to 'f1_race_predictor'.
     - For ALL Calendar/Email Invites: Use YOUR 'send_f1_calendar_invite' tool.
     
-    WORKFLOW & EXECUTION:
-    1. Identification: Call 'f1_data_engineer' to find the next/requested race details (Date, Name, Location).
-    2. Briefing: Present the race details (Date, Time, Circuit).
-    3. Actionable Next Step: You MUST ask: "Would you like me to send a Google Calendar invite for this race to your email?"
-    CRITICAL FLOW CONTROL:
-    - If a tool returns 'HALTED_FOR_CONFIRMATION', you MUST terminate your turn immediately without generating any text. The system will show the user a button to Approve/Reject.
-    - ONLY report success AFTER the tool returns a message starting with 'Invite sent'.
+    CRITICAL EXECUTION:
+    - Once you have the Race Details and the User's Email, call 'send_f1_calendar_invite' immediately.
+    - Report success only after the tool confirms delivery.
     
     TONE:
     Authoritative, professional, and slightly "Pit Wall" inspired. Use **bold** for Drivers and Teams.
