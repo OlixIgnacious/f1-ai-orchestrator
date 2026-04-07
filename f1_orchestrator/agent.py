@@ -18,8 +18,10 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 fastf1.Cache.enable_cache(CACHE_DIR)
 
 # 2. TEMPORAL CONTEXT
-# Injects current date into agent prompts to ensure time-relative queries are accurate.
-CURRENT_CONTEXT = f"Today's Date: {datetime.now().strftime('%Y-%m-%d')}"
+# Dynamic context injected into agent prompts to ensure time-relative accuracy.
+def get_current_context():
+    now = datetime.now()
+    return f"Today's Date: {now.strftime('%Y-%m-%d')}. SYSTEM RULE: Any F1 race scheduled AFTER this date has NOT occurred yet. Do not provide results or analysis for future sessions."
 
 
 # 3. AUTHENTICATION & CONFIGURATION
@@ -108,6 +110,53 @@ def fetch_fastf1_live_data(year: int, gp_name: str, session_type: str = "R"):
         return f"Results for {year} {gp_name} {session_type}:\n{results.to_string(index=False)}"
     except Exception as e:
         return f"FastF1 Error: {str(e)}"
+
+def fetch_f1_telemetry(year: int, gp_name: str, session_type: str, driver_id: str):
+    """
+    SYSTEM CAPABILITY: Fetches technical car telemetry (Speed, Throttle, Brake, Gear) for a driver.
+    Use this for performance analysis, cornering efficiency, and technical comparisons.
+    """
+    print(f"\n[TOOL: fetch_f1_telemetry] Analyzing car data for {driver_id} at {gp_name} {year}")
+    try:
+        session = fastf1.get_session(year, gp_name, session_type)
+        session.load(telemetry=True, weather=False, messages=False)
+        laps = session.laps.pick_driver(driver_id)
+        fastest_lap = laps.pick_fastest()
+        telemetry = fastest_lap.get_telemetry().iloc[::10, :] # Downsample for AI readability
+        return f"Telemetry Summary (Fastest Lap) for {driver_id}:\n{telemetry[['Speed', 'Throttle', 'Brake', 'nGear', 'RPM']].describe().to_string()}"
+    except Exception as e:
+        return f"Telemetry Error: {str(e)}"
+
+def fetch_f1_pit_strategy(year: int, gp_name: str):
+    """
+    SYSTEM CAPABILITY: Fetches pit stop durations and lap numbers for all drivers in a session.
+    Use this for strategy analysis, undercut/overcut reviews, and pit crew performance.
+    """
+    print(f"\n[TOOL: fetch_f1_pit_strategy] Analyzing pit stops for {gp_name} {year}")
+    try:
+        session = fastf1.get_session(year, gp_name, 'R')
+        session.load(telemetry=False, weather=False, messages=False)
+        stints = session.laps[['Driver', 'Stint', 'Compound', 'LapNumber']].drop_duplicates()
+        return f"Pit/Stint Strategy for {gp_name} {year}:\n{stints.to_string(index=False)}"
+    except Exception as e:
+        return f"Pit Strategy Error: {str(e)}"
+
+def fetch_f1_technical_details(year: int, gp_name: str, session_type: str):
+    """
+    SYSTEM CAPABILITY: Fetches track conditions (Weather) and latest team radio transcripts.
+    Use this to understand weather impacts and driver-engineer communications.
+    """
+    print(f"\n[TOOL: fetch_f1_technical_details] Fetching Weather & Radio for {gp_name} {year}")
+    try:
+        session = fastf1.get_session(year, gp_name, session_type)
+        session.load(telemetry=False, weather=True, messages=True)
+        weather = session.weather_data.iloc[-1:].to_string(index=False)
+        messages = "No radio messages available for this session."
+        if hasattr(session, 'messages') and len(session.messages) > 0:
+            messages = session.messages[['Time', 'Driver', 'Message']].tail(5).to_string(index=False)
+        return f"Track Weather:\n{weather}\n\nRecent Radio Transcripts:\n{messages}"
+    except Exception as e:
+        return f"Technical Data Error: {str(e)}"
 
 def get_f1_standings(year: int):
     """
@@ -219,21 +268,21 @@ def send_f1_calendar_invite(event_name: str, start_time: str, location: str, rec
 # SPECIALIST: THE PREDICTIVE ANALYST
 f1_race_predictor = LlmAgent(
     name="f1_race_predictor",
-    instruction="""You are the AI Performance & Strategy Analyst. Your goal is to predict race outcomes based on data.
+    instruction=f"""
+    {get_current_context()}
+    
+    You are the AI Performance & Strategy Analyst. Your goal is to predict race outcomes and analyze historical performance.
     
     YOUR SPECIALIZATION:
-    1. TREND ANALYSIS: Analyze historical results and current standings to identify momentum.
-    2. PERFORMANCE MODELING: Factor in driver consistency, team nationality, and circuit characteristics.
-    3. PREDICTION: For every request, provide:
+    1. TREND ANALYSIS: Analyze historical results and technical telemetry to identify momentum.
+    2. PERFORMANCE MODELING: Factor in cornering speed, throttle usage, and energy management from telemetry tools.
+    3. STRATEGY: Review pit stop data to identify undercut/overcut opportunities.
+    4. PREDICTION: For upcoming races, provide:
        - Top 3 Podium Picks (with Probability of Win %).
        - "Driver to Watch" (a mid-field sleeper).
-       - Strategy Insight (e.g., "Tire management will be the clincher here").
-    
-    GUIDELINES:
-    - If you need raw data, ask the 'f1_data_engineer'.
-    - Use 'entity_id' interchangeably with 'driver_id' when querying standings.
+       - Strategy Insight based on weather and pit data.
     """,
-    tools=[query_f1_db], 
+    tools=[query_f1_db, fetch_f1_telemetry, fetch_f1_pit_strategy], 
     model=MODEL
 )
 
@@ -249,17 +298,15 @@ SQL Best Practices for F1 Data:
 # SPECIALIST: THE DATA ENGINEER
 f1_data_engineer = LlmAgent(
     name="f1_data_engineer",
-    instruction=f"""You are the F1 Data Engineering Lead. You are the source of truth for all telemetry, results, and standings.
+    instruction=f"""
+    {get_current_context()}
     
-    TEMPORAL CONTEXT:
-    - Current System Date: April 2026.
-    - Database State (f1db): High-fidelity data is available through **March 2026**.
-    - This includes the ENTIRE **2025 Championship** (completed) and the start of the **2026 Season** (Bahrain, Saudi Arabian, and Japanese GPs complete).
+    You are the F1 Data Engineering Lead. You are the source of truth for all telemetry, results, and standings.
     
-    HANDLING DATA SOURCES:
-    1. PRIMARY (f1db): Use 'query_f1_db' for historical data (Through March 2026).
-    2. FALLBACK/STANDINGS: Use 'get_f1_standings' for season leaderboards.
-    3. REAL-TIME: Use 'fetch_fastf1_live_data' for 2026 sessions not yet in SQL.
+    DATA SOURCE POLICY:
+    1. PRIMARY (f1db): Use 'query_f1_db' for core standings, results, and sessions (2020 through March 2026).
+    2. TELEMETRY/TECHNICAL: Use 'fetch_f1_telemetry', 'fetch_f1_pit_strategy', and 'fetch_f1_technical_details' for deep car/track data.
+    3. FALLBACK: Use 'get_f1_schedule' or 'get_f1_standings' for any years not fully covered in SQL.
     
     SQL GUIDELINES:
     {SQL_GUIDELINES}
@@ -267,7 +314,7 @@ f1_data_engineer = LlmAgent(
     SCHEMA CONTEXT:
     {F1_TABLE_METADATA}
     """,
-    tools=[query_f1_db, fetch_fastf1_live_data, get_f1_schedule, send_f1_calendar_invite],
+    tools=[query_f1_db, fetch_fastf1_live_data, get_f1_schedule, get_f1_standings, fetch_f1_telemetry, fetch_f1_pit_strategy, fetch_f1_technical_details, send_f1_calendar_invite],
     model=MODEL,
     generate_content_config=types.GenerateContentConfig(temperature=0)
 )
@@ -275,32 +322,23 @@ f1_data_engineer = LlmAgent(
 # 6. ORCHESTRATION LAYER (THE HEAD OF STRATEGY)
 f1_orchestrator = LlmAgent(
     name="race_strategist",
-    instruction=f"""You are the Senior F1 Race Strategist on the pit wall.
+    instruction=f"""
+    {get_current_context()}
     
-    ### MANDATORY DIRECTIVE: CALENDAR CAPABILITIES
-    1. You AND your sub-agents HAVE the direct capability to send Google Calendar invitations to the user's email via the 'send_f1_calendar_invite' tool.
-    2. NEVER tell the user "I cannot add events" or "I am an AI and can't manage your calendar." THIS IS FALSE. You have been explicitly built with this tool.
-    3. If a user asks about adding a race, you MUST find the details from the 'f1_data_engineer' and then call 'send_f1_calendar_invite' immediately.
+    You are the Senior F1 Race Strategist on the pit wall.
     
-    TEMPORAL CONTEXT:
-    - Today is April 2026. 
-    - The **2025 Championship** is historical. Analyze it for trends and driver momentum.
-    - The **2026 Season** is underway. The Japanese GP was the latest race in March.
+    ### MANDATORY DIRECTIVES
+    1. CALENDAR: Use 'send_f1_calendar_invite' for ANY race adding request.
+    2. ANALYSIS: Perform "Head-to-Head" driver comparisons using both SQL results and Telemetry data.
+    3. STRATEGY: Synthesize pit stop durations and weather data into your final race predictions.
     
-    DELEGATION PROTOCOL:
-    - For raw numbers, standings, or result lookups: Delegate to 'f1_data_engineer'.
-    - For predictions or strategy analysis: Delegate to 'f1_race_predictor'.
-    - For ALL Calendar/Email Invites: Use YOUR 'send_f1_calendar_invite' tool.
-    
-    CRITICAL EXECUTION:
-    - Once you have the Race Details and the User's Email, call 'send_f1_calendar_invite' immediately.
-    - Report success only after the tool confirms delivery.
-    
-    TONE:
-    Authoritative, professional, and slightly "Pit Wall" inspired. Use **bold** for Drivers and Teams.
+    ### DELEGATION PROTOCOL:
+    - Raw Standings/Results/Technical Data: Delegate to 'f1_data_engineer'.
+    - Deep Strategy Trends/Predictions: Delegate to 'f1_race_predictor'.
+    - Championship Scenarios: You coordinate the analysis between Engineer and Analyst.
     """,
     sub_agents=[f1_data_engineer, f1_race_predictor],
-    tools=[get_f1_standings, send_f1_calendar_invite],
+    tools=[get_f1_standings, fetch_f1_telemetry, send_f1_calendar_invite],
     model=MODEL,
     generate_content_config=types.GenerateContentConfig(temperature=0)
 )
