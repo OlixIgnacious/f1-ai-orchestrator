@@ -130,10 +130,26 @@ def fetch_f1_telemetry(year: int, gp_name: str, session_type: str, driver_id: st
     try:
         session = fastf1.get_session(year, gp_name, session_type)
         session.load(telemetry=True, weather=False, messages=False)
-        laps = session.laps.pick_driver(driver_id)
+        
+        # Robust driver lookup: pick_driver often requires the 3-letter abbreviation (e.g. VER)
+        # If the driver_id is long, it might be a full ID; we try to find the match in results
+        target_driver = driver_id
+        if len(driver_id) > 3:
+             # Look for the abbreviation in the results table first
+             match = session.results[session.results['FullName'].str.contains(driver_id, case=False, na=False)]
+             if not match.empty:
+                 target_driver = match.iloc[0]['Abbreviation']
+        
+        laps = session.laps.pick_driver(target_driver)
+        if laps.empty:
+            return f"Telemetry Error: No laps recorded for driver '{target_driver}' in this session."
+            
         fastest_lap = laps.pick_fastest()
+        if fastest_lap is None:
+            return f"Telemetry Error: Could not identify a fastest lap for driver '{target_driver}'."
+            
         telemetry = fastest_lap.get_telemetry().iloc[::10, :] # Downsample for AI readability
-        return f"Telemetry Summary (Fastest Lap) for {driver_id}:\n{telemetry[['Speed', 'Throttle', 'Brake', 'nGear', 'RPM']].describe().to_string()}"
+        return f"Telemetry Summary (Fastest Lap) for {target_driver}:\n{telemetry[['Speed', 'Throttle', 'Brake', 'nGear', 'RPM']].describe().to_string()}"
     except Exception as e:
         return f"Telemetry Error: {str(e)}"
 
