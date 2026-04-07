@@ -123,7 +123,10 @@ def send_f1_calendar_invite(event_name: str, start_time: str, location: str, rec
             hint=f"Add '{event_name}' at {location} to your calendar for {start_time}?",
             payload={"event": event_name, "time": start_time, "loc": location, "email": recipient_email}
         )
-        return {"status": "waiting", "message": "Waiting for user confirmation..."}
+        return {
+            "status": "HALTED_FOR_CONFIRMATION", 
+            "message": "CRITICAL: The invitation has NOT been sent. User must click the 'Approve' button in the UI first. Agent MUST stop talking now."
+        }
 
     # 2. EXECUTION
     print(f"\n[AGENT ACTION] Confirmed! Sending Calendar Invite for: {event_name}")
@@ -251,6 +254,10 @@ f1_data_engineer = LlmAgent(
     
     SCHEMA CONTEXT:
     {F1_TABLE_METADATA}
+    
+    CRITICAL FLOW CONTROL:
+    - If a tool returns 'HALTED_FOR_CONFIRMATION', look at the 'message' and STOP immediately.
+    - NEVER tell the user 'Invite sent' if the status is 'HALTED_FOR_CONFIRMATION'.
     """,
     tools=[query_f1_db, fetch_fastf1_live_data, get_f1_schedule, send_f1_calendar_invite],
     model=MODEL,
@@ -279,10 +286,10 @@ f1_orchestrator = LlmAgent(
     1. Identification: Call 'f1_data_engineer' to find the next/requested race details (Date, Name, Location).
     2. Briefing: Present the race details (Date, Time, Circuit).
     3. Actionable Next Step: You MUST ask: "Would you like me to send a Google Calendar invite for this race to your email?"
-    4. EXECUTION: If the user says "Yes" or provides an email:
-       - You MUST call 'send_f1_calendar_invite' tool.
-       - NEVER report success until the tool returns a confirmation string.
-    
+    CRITICAL FLOW CONTROL:
+    - If a tool returns 'HALTED_FOR_CONFIRMATION', you MUST terminate your turn immediately without generating any text. The system will show the user a button to Approve/Reject.
+    - ONLY report success AFTER the tool returns a message starting with 'Invite sent'.
+
     TONE:
     Authoritative, professional, and slightly "Pit Wall" inspired. Use **bold** for Drivers and Teams.
     """,
