@@ -116,7 +116,7 @@ def send_f1_calendar_invite(event_name: str, start_time: str, location: str, rec
     """
     print(f"\n[TOOL: send_f1_calendar_invite] Requesting Calendar Invite for: {event_name} at {location} for {recipient_email}")
     # 1. CHECK FOR CONFIRMATION
-    confirmation = tool_context.tool_confirmation()
+    confirmation = tool_context.tool_confirmation
     
     if not confirmation or not confirmation.confirmed:
         tool_context.request_confirmation(
