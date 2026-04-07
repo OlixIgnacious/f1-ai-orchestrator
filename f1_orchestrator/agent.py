@@ -104,9 +104,10 @@ def fetch_fastf1_live_data(year: int, gp_name: str, session_type: str = "R"):
     print(f"\n[TOOL: fetch_fastf1_live_data] Fetching FastF1 data: {year} {gp_name} {session_type}")
     try:
         session = fastf1.get_session(year, gp_name, session_type)
-        session.load()
+        session.load(telemetry=False, weather=False, messages=False)
         
-        results = session.results[['ClassifiedPosition', 'FullName', 'TeamName', 'Status', 'Points']]
+        # Select more comprehensive columns to cover Grid, Points, and Fastest Lap
+        results = session.results[['ClassifiedPosition', 'FullName', 'TeamName', 'Status', 'Points', 'GridPosition', 'LapTime']]
         return f"Results for {year} {gp_name} {session_type}:\n{results.to_string(index=False)}"
     except Exception as e:
         return f"FastF1 Error: {str(e)}"
@@ -305,8 +306,9 @@ f1_data_engineer = LlmAgent(
     
     DATA SOURCE POLICY:
     1. PRIMARY (f1db): Use 'query_f1_db' for core standings, results, and sessions (2020 through March 2026).
-    2. TELEMETRY/TECHNICAL: Use 'fetch_f1_telemetry', 'fetch_f1_pit_strategy', and 'fetch_f1_technical_details' for deep car/track data.
-    3. FALLBACK: Use 'get_f1_schedule' or 'get_f1_standings' for any years not fully covered in SQL.
+    2. SESSION AWARDS (Fastest Lap/Pole): If 'query_f1_db' results for 'fastest_lap' are inconclusive (all False), you MUST fallback to 'fetch_fastf1_live_data' to confirm the session winner's awards.
+    3. TELEMETRY/TECHNICAL: Use 'fetch_f1_telemetry', 'fetch_f1_pit_strategy', and 'fetch_f1_technical_details' for deep car/track data.
+    4. FALLBACK: Use 'get_f1_schedule' or 'get_f1_standings' for any years not fully covered in SQL.
     
     SQL GUIDELINES:
     {SQL_GUIDELINES}
