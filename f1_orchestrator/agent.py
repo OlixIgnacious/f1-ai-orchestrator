@@ -111,8 +111,12 @@ def fetch_fastf1_live_data(year: int, gp_name: str, session_type: str = "R"):
         session = fastf1.get_session(year, gp_name, session_type)
         session.load(telemetry=False, weather=False, messages=False)
         
-        # Select more comprehensive columns to cover Grid, Points, and Fastest Lap
-        results = session.results[['ClassifiedPosition', 'FullName', 'TeamName', 'Status', 'Points', 'GridPosition', 'LapTime']]
+        # Select comprehensive columns, using 'BestLapTime' (correct FastF1 key)
+        # We use a list comprehension to only select columns that actually exist in the results
+        target_cols = ['ClassifiedPosition', 'FullName', 'TeamName', 'Status', 'Points', 'GridPosition', 'BestLapTime']
+        available_cols = [c for c in target_cols if c in session.results.columns]
+        
+        results = session.results[available_cols]
         return f"Results for {year} {gp_name} {session_type}:\n{results.to_string(index=False)}"
     except Exception as e:
         return f"FastF1 Error: {str(e)}"
