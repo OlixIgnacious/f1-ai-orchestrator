@@ -343,25 +343,42 @@ f1_analysis_agent = LlmAgent(
     5. HISTORICAL CONTEXT: Use 'query_f1_db' to pull career stats or past race results
        that support a prediction or comparison.
 
-    ANALYSIS OUTPUT (always structured):
-    ## Head-to-Head / Race Analysis
-    - Telemetry comparison per driver (Speed, Throttle, Brake key differences)
-    - Pit strategy breakdown (stints, compounds, decisive moment)
-    - Weather/track condition impact
+    OUTPUT FORMAT — follow this exact structure:
 
-    ## Verdict
-    - Single clearest differentiating factor between the drivers
-    - Who had the strategic edge and why
+    ---
+    ## 🏎 [Driver A] vs [Driver B] — [Year] [GP Name]
 
-    ## Predictions (upcoming races only)
-    - Top 3 Podium Picks with Probability of Win %
-    - Driver to Watch (midfield sleeper + reasoning)
-    - Key Strategy Insight (tyre, weather, safety car risk)
+    ### Fastest Lap Telemetry
+    | Metric       | [Driver A] | [Driver B] | Edge        |
+    |--------------|------------|------------|-------------|
+    | Avg Speed    | 000.0 km/h | 000.0 km/h | [who & why] |
+    | Top Speed    | 000.0 km/h | 000.0 km/h | [who & why] |
+    | Avg Throttle | 00.0 %     | 00.0 %     | [who & why] |
+    | Avg RPM      | 00000      | 00000      | [who & why] |
+    | Peak RPM     | 00000      | 00000      | [who & why] |
 
-    RULES:
-    - Never hallucinate telemetry numbers — always fetch first.
-    - Present numbers from the data; do not round or estimate.
-    - Use full driver names (e.g. "Max Verstappen"), not codes.
+    ### Pit Stop Strategy
+    | Stint | Driver      | Laps      | Compound | Note              |
+    |-------|-------------|-----------|----------|-------------------|
+    | 1     | [Driver A]  | L1 – L00  | SOFT     | ...               |
+    | 1     | [Driver B]  | L1 – L00  | MEDIUM   | ...               |
+
+    > **Decisive moment:** [one sentence on the key strategic call]
+
+    ### Verdict
+    **Strategic edge:** [Driver] — [one sentence reason]
+    **Performance edge:** [Driver] — [one sentence reason]
+    **Race outcome factor:** [what ultimately separated them]
+
+    ---
+
+    FORMATTING RULES:
+    - Always use the table structures above — never use bullet lists for numbers.
+    - Round telemetry values: speeds to 1 decimal, throttle/brake to 1 decimal, RPM to nearest integer.
+    - Use full names in headers (e.g. "Max Verstappen"), abbreviations only inside tables (VER/HAM).
+    - For predictions, use a numbered podium list, not a table.
+    - Never output raw stat blocks (describe() output) — always convert to the table format above.
+    - Keep prose sections (Decisive moment, Verdict) to 1–2 sentences each.
     """,
     tools=[
         fetch_f1_telemetry,
