@@ -104,21 +104,54 @@ def fetch_fastf1_live_data(year: int, gp_name: str, session_type: str = "R"):
 def get_f1_standings(year: int):
     """
     Fetches Drivers' and Constructors' championship standings for a given year.
-    - year: The F1 season year (e.g., 2024, 2025).
+    Returns two clean tables: Driver Standings and Constructor Standings.
+    - year: The F1 season year (e.g., 2024, 2025, 2026).
     """
     print(f"\n[TOOL: get_f1_standings] Fetching Standings for {year}")
     try:
-        sql = f"""
-        SELECT position, points, wins, standing_type, entity_id
-        FROM f1_standings
-        WHERE season = {year}
-        AND round = (SELECT max(round) FROM f1_standings WHERE season = {year})
-        ORDER BY position ASC
+        latest_round_sql = f"SELECT max(round) FROM f1_standings WHERE season = {year}"
+
+        driver_sql = f"""
+        SELECT
+            fs.position        AS pos,
+            d.full_name        AS driver,
+            fs.points          AS pts,
+            fs.wins            AS wins
+        FROM f1_standings fs
+        JOIN f1_drivers d ON d.code = fs.entity_id
+        WHERE fs.season = {year}
+          AND fs.standing_type = 'driver'
+          AND fs.round = ({latest_round_sql})
+        ORDER BY fs.position ASC
         """
-        db_res = query_f1_db(sql)
-        if "Data: []" not in db_res and "Database Error" not in db_res:
-            return f"F1 Standings for {year} (via f1db):\n{db_res}"
-        return f"Standings for {year} are not yet in the database. Use 'get_f1_schedule' to check race winners manually."
+
+        constructor_sql = f"""
+        SELECT
+            fs.position        AS pos,
+            t.name             AS constructor,
+            fs.points          AS pts,
+            fs.wins            AS wins
+        FROM f1_standings fs
+        JOIN f1_teams t ON t.team_id = fs.entity_id
+        WHERE fs.season = {year}
+          AND fs.standing_type = 'constructor'
+          AND fs.round = ({latest_round_sql})
+        ORDER BY fs.position ASC
+        """
+
+        driver_res = query_f1_db(driver_sql)
+        constructor_res = query_f1_db(constructor_sql)
+
+        if "Database Error" in driver_res and "Database Error" in constructor_res:
+            return f"Standings Error: {driver_res}"
+
+        if "Data: []" in driver_res and "Data: []" in constructor_res:
+            return f"No standings data found for {year} in the database yet."
+
+        return (
+            f"=== {year} DRIVER STANDINGS ===\n{driver_res}\n\n"
+            f"=== {year} CONSTRUCTOR STANDINGS ===\n{constructor_res}"
+        )
     except Exception as e:
         return f"Standings Error: {str(e)}"
 
@@ -263,8 +296,12 @@ f1_intel_agent = LlmAgent(
     6. SCHEDULE: Use 'get_f1_schedule' for calendars, dates, and circuit names.
     7. STANDINGS: Use 'get_f1_standings' for championship positions and points.
 
-    Return all data in clearly labelled sections. Never summarise or draw conclusions.
-    If a source returns no data, say so explicitly and note which fallback you tried.
+    OUTPUT FORMAT:
+    - Return data in clearly labelled sections with headers (e.g. "## Telemetry — VER").
+    - Never return raw Python tuples or column arrays. Convert to readable tables or lists.
+    - For driver/team names: use full names, not codes (e.g. "Max Verstappen", not "VER").
+    - If a source returns no data, say so explicitly and note which fallback you tried.
+    - Never summarise or draw conclusions — that is f1_analysis_agent's job.
 
     SQL GUIDELINES:
     {SQL_GUIDELINES}
@@ -360,38 +397,42 @@ f1_orchestrator = LlmAgent(
     specialists and deliver the final response. You have no tools — always delegate.
 
     ═══════════════════════════════════════════════════════
-    ROUTING RULES
+    AGENT CAPABILITIES (know this before routing)
     ═══════════════════════════════════════════════════════
-
-    → Transfer to 'f1_intel_agent' when the user needs raw data:
-      • Race results, finishing positions, lap times, race winners
-      • Driver or constructor standings and points
-      • Historical stats (wins, poles, fastest laps, DNFs)
-      • Session data (qualifying, practice, sprint)
-      • Raw telemetry numbers, pit stint data, weather readings
-
-    → Transfer to 'f1_analysis_agent' when the user needs insight:
-      • Telemetry or car performance interpretation
-      • Pit strategy and tyre compound analysis
-      • Head-to-head driver comparisons
-      • Race predictions, podium picks, "who will win"
-      • Strategy recommendations
-
-    → Transfer to 'f1_event_scheduler' for anything calendar-related:
-      • Adding a race or session to Google Calendar
-      • Setting a reminder for an upcoming event
-      • Any calendar invite request
+    • f1_intel_agent   — fetches ALL raw data (DB, FastF1, telemetry, pit, weather, schedule, standings)
+    • f1_analysis_agent — has NO tools. Reasons only over data already in the conversation context.
+    • f1_event_scheduler — fetches schedule + sends calendar invites only.
 
     ═══════════════════════════════════════════════════════
-    TWO-STEP PATTERN for analysis requests:
+    ROUTING RULES — MANDATORY, follow in order
     ═══════════════════════════════════════════════════════
-    When the user asks for analysis, predictions, or comparisons:
-    1. First transfer to 'f1_intel_agent' to fetch all required raw data.
-    2. Once data is returned into context, transfer to 'f1_analysis_agent' to reason over it.
-    3. Synthesize both outputs into a single professional report for the user.
 
-    If 'f1_analysis_agent' reports missing data, re-fetch via 'f1_intel_agent' then retry.
-    If any sub-agent returns an error, report it clearly — do not silently retry.
+    RULE 1 — CALENDAR: If the user wants to add a race to their calendar or set a reminder,
+    transfer to 'f1_event_scheduler'. Do not involve other agents.
+
+    RULE 2 — DATA ONLY: If the user asks for standings, results, lap times, race winners,
+    or historical stats with no analysis requested, transfer to 'f1_intel_agent' only.
+    Return its output directly — do not call f1_analysis_agent.
+
+    RULE 3 — ANALYSIS / COMPARISON / PREDICTION: This is a mandatory two-step:
+      STEP 1 → Transfer to 'f1_intel_agent'. Instruct it to fetch ALL data needed for the
+               analysis: telemetry for both drivers, pit strategy, race results, weather.
+               Wait for it to return the complete raw data.
+      STEP 2 → Transfer to 'f1_analysis_agent'. It will read the raw data from context
+               and produce the analysis. DO NOT skip Step 1 — f1_analysis_agent has no
+               tools and WILL ask the user for data if you send it in cold.
+      STEP 3 → Synthesize both outputs into one clean report for the user.
+
+    ⚠ CRITICAL: Never transfer to 'f1_analysis_agent' before 'f1_intel_agent' has run.
+    If f1_analysis_agent says data is missing, go back to f1_intel_agent to fetch it.
+
+    ═══════════════════════════════════════════════════════
+    OUTPUT RULES
+    ═══════════════════════════════════════════════════════
+    • Never show raw tuples, column arrays, or Python data structures to the user.
+    • Always present the final answer as clean, readable prose or structured markdown.
+    • For standings and results: use a formatted table or numbered list with full names.
+    • If a sub-agent returns an error, report it clearly — do not silently retry.
     """,
     sub_agents=[f1_intel_agent, f1_analysis_agent, f1_event_scheduler],
     tools=[],
