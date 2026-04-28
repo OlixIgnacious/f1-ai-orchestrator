@@ -205,6 +205,7 @@ def query_f1_db(sql_query: str, tool_context: ToolContext = None) -> str:  # noq
     Executes a SELECT query against the F1 AlloyDB (f1db).
     Use for driver stats, historical race results, standings, circuits, and session data.
     Only SELECT queries are permitted — write operations will be rejected.
+    SQL_GUIDELINES provides best practices and common pitfalls to avoid when writing queries against the F1 database.
     """
     print(f"\n[TOOL: query_f1_db] {sql_query[:120]}")
     if not _validate_sql(sql_query):
