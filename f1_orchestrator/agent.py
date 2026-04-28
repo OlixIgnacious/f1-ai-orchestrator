@@ -200,6 +200,8 @@ def get_temporal_context(tool_context: ToolContext) -> str:
 
 def query_f1_db(sql_query: str, tool_context: ToolContext = None) -> str:  # noqa: ARG001
     """
+    F1_TABLE_METADATA is the source of truth for the current AlloyDB schema. Always refer to it when writing SQL queries.
+    DO NOT assume any schema details that are not explicitly listed in F1_TABLE_METADATA. If you need a specific data point, check if it's in the metadata and which table/column it belongs to before writing your query.
     Executes a SELECT query against the F1 AlloyDB (f1db).
     Use for driver stats, historical race results, standings, circuits, and session data.
     Only SELECT queries are permitted — write operations will be rejected.
