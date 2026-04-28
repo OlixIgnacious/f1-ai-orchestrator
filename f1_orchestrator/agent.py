@@ -1,4 +1,5 @@
 import os
+import logging
 import fastf1
 import urllib.parse
 from datetime import datetime, timedelta
@@ -7,11 +8,22 @@ from google.adk.agents import LlmAgent
 from google.adk.models.google_llm import Gemini
 from google.genai import types
 from google.adk.tools import ToolContext
+from google.adk.agents.callback_context import CallbackContext
 from googleapiclient.discovery import build
 from dotenv import load_dotenv
 from .schema import F1_TABLE_METADATA
 
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
 load_dotenv()
+
+
+def _log_agent_start(callback_context: CallbackContext):
+    """Log when any agent starts processing — shows agent name in Cloud Run logs."""
+    logger.info("[AGENT: %s] started processing", callback_context.agent_name)
+    return None  # None = continue normally
+
 
 # ─────────────────────────────────────────────
 # 1. SYSTEM INITIALISATION
@@ -144,27 +156,25 @@ SQL Best Practices for F1 Data (verified against live AlloyDB schema):
    DB stores full multilingual official names e.g. 'FORMULA 1 ARAMCO GRAN PREMIO DE ESPAÑA 2024'.
 
 4. STANDINGS — CRITICAL:
-   Use f1_standings, NOT 'driver_standings' or 'team_standings' (those tables don't exist).
-   standing_type = 'driver' (lowercase) or 'constructor' (lowercase). NOT 'Driver' or 'Team'.
+   Table: f1_standings. Columns: standing_type, entity_id, position, points, wins, season, round.
+   standing_type = 'driver' (lowercase) or 'constructor' (lowercase).
    entity_id for 'driver'      = driver code e.g. 'VER'
    entity_id for 'constructor' = team_id    e.g. 'mercedes', 'red_bull'
    Join driver standings:      JOIN f1_drivers d ON d.driver_id = fs.entity_id
    Join constructor standings: JOIN f1_teams   t ON t.team_id   = fs.entity_id
+   PREFERRED: use get_f1_standings(year) tool — it handles all joins and formatting automatically.
 
-5. INVALID TABLE NAMES — NEVER USE THESE (they do not exist):
-   races, race_schedule, grand_prix, race_results, driver_standings, team_standings,
-   constructors, drivers, results, seasons (Ergast schema).
-   For schedule/upcoming races: use get_f1_schedule tool instead.
-
-6. "TOP N" AGGREGATES — CRITICAL:
+5. "TOP N" AGGREGATES — CRITICAL:
    "Top N penalties", "most common incidents", "most given penalty" = FREQUENCY query.
    CORRECT:   SELECT penalty, COUNT(*) AS times_given FROM f1_decisions
               WHERE year = 2025 GROUP BY penalty ORDER BY times_given DESC LIMIT 5
    INCORRECT: SELECT * FROM f1_decisions WHERE year = 2025 LIMIT 5
 
-7. LIMITS: Apply LIMIT 10 unless the user asks for a full list (standings = no limit).
-8. ORDERING: Order results logically (position ASC, points DESC, date DESC).
-9. EMPTY RESULTS: If query returns Data: [], immediately fallback to fetch_fastf1_live_data.
+6. LIMITS: Apply LIMIT 10 unless the user asks for a full list (standings = no limit).
+7. ORDERING: Order results logically (position ASC, points DESC, date DESC).
+8. ON ERROR / EMPTY RESULTS: If query_f1_db returns "Database Error" or "Data: []",
+   do NOT retry with a different table name. Instead fall back to fetch_fastf1_live_data
+   or the appropriate schedule/standings tool.
 """
 
 
@@ -1263,6 +1273,7 @@ f1_intel_agent = LlmAgent(
         get_circuit_characteristics,
         get_driver_head_to_head,
     ],
+    before_agent_callback=_log_agent_start,
     model=MODEL,
     generate_content_config=types.GenerateContentConfig(temperature=0)
 )
@@ -1297,9 +1308,11 @@ f1_analysis_agent = LlmAgent(
 
     TOOL USAGE:
     1. FUTURE RACE PREDICTIONS ("predict the winner of the next race", "who will win X"):
-       NEVER call fetch_fastf1_live_data or fetch_f1_telemetry for a race that hasn't happened.
-       Instead: call query_f1_db for recent standings/results + get_f1_standings for current form.
-       Base the prediction on existing AlloyDB data only. This is fast and avoids timeouts.
+       The future race has NOT happened — do NOT call fetch_fastf1_live_data to fetch ITS results.
+       DO: call get_f1_standings(year) for current championship form.
+       DO: call query_f1_db to get PAST results at that circuit for circuit-specific form.
+       DO: call fetch_fastf1_live_data for PAST races at that circuit if DB returns empty.
+       Base the prediction on current standings + past circuit performance.
 
     2. TELEMETRY (past races only): Use fetch_f1_telemetry for Speed, Throttle, Brake, Gear, RPM.
        Always fetch for every driver being compared — never skip one side.
@@ -1372,7 +1385,9 @@ f1_analysis_agent = LlmAgent(
         fetch_f1_technical_details,
         fetch_fastf1_live_data,
         query_f1_db,
+        get_f1_standings,
     ],
+    before_agent_callback=_log_agent_start,
     code_executor=_code_executor,  # None if sandbox not configured — agent still works
     model=MODEL,
     generate_content_config=types.GenerateContentConfig(temperature=0.4)
@@ -1427,6 +1442,7 @@ f1_steward_agent = LlmAgent(
         fetch_race_control_messages,
         get_full_ruling,
     ],
+    before_agent_callback=_log_agent_start,
     model=MODEL,
     generate_content_config=types.GenerateContentConfig(temperature=0)
 )
@@ -1472,6 +1488,7 @@ f1_event_scheduler = LlmAgent(
         get_calendar_options,
         send_f1_calendar_invite,
     ],
+    before_agent_callback=_log_agent_start,
     model=MODEL,
     generate_content_config=types.GenerateContentConfig(temperature=0)
 )
@@ -1512,30 +1529,56 @@ f1_coordinator = LlmAgent(
     ORDERING: intel first → analysis/steward second → scheduler last.
     MAX 3 agent transfers per query (not counting get_temporal_context).
 
-    WORKED EXAMPLE — "Add next race to calendar and predict the winner":
-      call get_temporal_context → "Today is 2026-04-29"
-      [DATA ✓] → transfer f1_intel_agent:
-          "Today is 2026-04-29. The next race has not happened yet — it is NOT in the database.
-           Use get_f1_schedule(2026) ONLY to find the next race after 2026-04-29.
-           Return: race name, date, circuit location. Do NOT use query_f1_db."
-      [ANALYSIS ✓] → transfer f1_analysis_agent:
-          "Today is 2026-04-29. Predict the winner of [race_name] at [circuit].
-           The race has NOT happened yet — do NOT try to fetch its results.
-           Use ONLY: get_f1_standings(2026) for current standings, and
-           query_f1_db for PAST race results at [circuit] to assess circuit form."
-      [CALENDAR ✓] → transfer f1_event_scheduler:
-          "Add [race_name] on [date] at [location] to the user's calendar."
-      Combine all three answers into ONE final response.
+    ── WORKED EXAMPLES — match the incoming query to the closest example ──────────
 
-    WORKED EXAMPLE — "Who won the 2024 Monaco GP?":
-      call get_temporal_context → "Today is 2026-04-29"
-      [DATA ✓] → transfer f1_intel_agent: "Today is 2026-04-29. Who won the 2024 Monaco GP?"
+    EXAMPLE 1 — "Who won the 2024 Monaco GP?":
+      call get_temporal_context → "Today is [date]"
+      [DATA ✓] → transfer f1_intel_agent:
+          "Today is [date]. Who won the 2024 Monaco GP? Use query_f1_db."
       Return intel's answer directly.
 
-    WORKED EXAMPLE — "Was the pit release at 2024 Bahrain safe?":
-      call get_temporal_context → "Today is 2026-04-29"
-      [RULES ✓] → transfer f1_steward_agent: "Today is 2026-04-29. Was the pit release at 2024 Bahrain safe?"
-      Return steward's verdict directly.
+    EXAMPLE 2 — "Top 5 most common penalties in 2025":
+      call get_temporal_context → "Today is [date]"
+      [DATA ✓] → transfer f1_intel_agent:
+          "Today is [date]. What are the top 5 most common penalties in 2025?
+           Use query_f1_db with a GROUP BY query on f1_decisions table."
+      Return intel's answer directly.
+
+    EXAMPLE 3 — "Analyse Norris vs Piastri telemetry at Monza 2024":
+      call get_temporal_context → "Today is [date]"
+      [ANALYSIS ✓] → transfer f1_analysis_agent:
+          "Today is [date]. Compare Norris (NOR) vs Piastri (PIA) telemetry at Monza 2024 Race.
+           Fetch telemetry for both drivers and compare speed, throttle, brake, and pit strategy."
+      Return analysis answer directly.
+
+    EXAMPLE 4 — "Was Verstappen's move on Hamilton legal? What's the standings impact?":
+      call get_temporal_context → "Today is [date]"
+      [RULES ✓] → transfer f1_steward_agent:
+          "Today is [date]. Was Verstappen's move on Hamilton at [race] legal? Give a verdict."
+      [DATA ✓] → transfer f1_intel_agent:
+          "Today is [date]. What are the current [year] driver championship standings?"
+      Combine: steward verdict first, then standings table.
+
+    EXAMPLE 5 — "Add next race to calendar and predict the winner":
+      call get_temporal_context → "Today is [date]"
+      [DATA ✓] → transfer f1_intel_agent:
+          "Today is [date]. The next race is in the future — NOT in the database.
+           Use get_f1_schedule([year]) ONLY to find the next race after [date].
+           Return: race name, date, circuit. Do NOT use query_f1_db for schedule."
+      [ANALYSIS ✓] → transfer f1_analysis_agent:
+          "Today is [date]. Predict the winner of [race_name] at [circuit].
+           The race has NOT happened — do NOT fetch its results.
+           Use get_f1_standings([year]) for current form +
+           query_f1_db for PAST results at [circuit] (FastF1 fallback if DB is empty)."
+      [CALENDAR ✓] → transfer f1_event_scheduler:
+          "Add [race_name] on [date] at [location] to the user's calendar."
+      Combine all three into ONE final response.
+
+    EXAMPLE 6 — "Add the British GP weekend to my calendar":
+      call get_temporal_context → "Today is [date]"
+      [CALENDAR ✓] → transfer f1_event_scheduler:
+          "Today is [date]. Add all sessions for the [year] British GP to the user's calendar."
+      Return scheduler's answer directly.
 
     OUTPUT RULES:
     - Show the FULL content from every agent — never summarise or skip.
@@ -1564,6 +1607,7 @@ f1_coordinator = LlmAgent(
         f1_steward_agent,
         f1_event_scheduler,
     ],
+    before_agent_callback=_log_agent_start,
     model=MODEL,
     generate_content_config=types.GenerateContentConfig(temperature=0.3)
 )
@@ -1593,6 +1637,7 @@ f1_orchestrator = LlmAgent(
     Never answer directly. Never explain the classification to the user.
     """,
     sub_agents=[f1_coordinator],
+    before_agent_callback=_log_agent_start,
     model=MODEL,
     generate_content_config=types.GenerateContentConfig(temperature=0)
 )

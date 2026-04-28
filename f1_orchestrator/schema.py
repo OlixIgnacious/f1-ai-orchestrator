@@ -100,11 +100,9 @@ ORDER BY times_given DESC
 LIMIT 10;
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TABLES THAT DO NOT EXIST — querying these will fail
+TOOL ROUTING
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-races, race_schedule, grand_prix, race_results,
-driver_standings, team_standings, constructors,
-drivers, results, seasons, circuits (Ergast names)
-→ For upcoming races/schedule: use get_f1_schedule tool.
-→ For current standings: use get_f1_standings tool.
+→ Upcoming races / schedule: use get_f1_schedule(year) tool — NOT query_f1_db.
+→ Championship standings: use get_f1_standings(year) tool — avoids complex joins.
+→ On query_f1_db error: fall back to fetch_fastf1_live_data — do NOT guess table names.
 """
