@@ -1,0 +1,12 @@
+# Requirements for scripts/ingest_regulations.py only.
+# Install separately in a fresh venv or Cloud Shell — conflicts with
+# protobuf==6.33.6 pinned in the main requirements.txt.
+#
+# Usage:
+#   pip install -r scripts/requirements-ingest.txt
+google-cloud-documentai
+google-cloud-storage
+google-cloud-aiplatform
+vertexai
+psycopg2-binary
+python-dotenv

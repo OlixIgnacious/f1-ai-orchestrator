@@ -35,7 +35,25 @@ wheels/
 .DS_Store
 Thumbs.db
 
-# Binaries
+# Logs
+*.log
+
+# Large media / binaries
+*.mp4
 alloydb-auth-proxy
 *.png
+!hero.png
 !image.png
+
+# IDEs and Tools
+.claude/
+.pytest_cache/
+
+# Documents
+*.pdf
+*.pptx
+VIDEO_STORYLINE.md
+PENDING.md
+
+# Data
+data/

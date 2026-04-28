@@ -1,0 +1,125 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: f1-orchestrator
+  namespace: '521055768390'
+  annotations:
+    run.googleapis.com/ingress: all
+    run.googleapis.com/maxScale: '3'
+    # gen2 execution environment required for GCS FUSE support
+    run.googleapis.com/execution-environment: gen2
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/maxScale: '3'
+        run.googleapis.com/startup-cpu-boost: 'true'
+        # Enable GCS FUSE volume mounting
+        run.googleapis.com/mount-volumes: gcs-cache
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 3600
+      serviceAccountName: 521055768390-compute@developer.gserviceaccount.com
+
+      # ── GCS FUSE volume definition ──────────────────────────────────────
+      volumes:
+        - name: gcs-cache
+          csi:
+            driver: gcsfuse.run.googleapis.com
+            readOnly: false
+            volumeAttributes:
+              bucketName: f1-command-center-dev-f1-cache
+
+      containers:
+        - image: IMAGE_PLACEHOLDER
+          ports:
+            - name: http1
+              containerPort: 8080
+
+          resources:
+            limits:
+              cpu: 1000m
+              memory: 4Gi   # increased from 2Gi — FastF1 telemetry is memory-heavy
+
+          # ── GCS FUSE volume mount ─────────────────────────────────────────
+          volumeMounts:
+            - name: gcs-cache
+              mountPath: /mnt/gcs-cache
+
+          startupProbe:
+            failureThreshold: 1
+            periodSeconds: 240
+            tcpSocket:
+              port: 8080
+            timeoutSeconds: 240
+
+          env:
+            # ── AlloyDB ────────────────────────────────────────────────────
+            - name: ALLOYDB_HOST
+              value: "34.27.46.40"
+            - name: ALLOYDB_PORT
+              value: "5432"
+            - name: ALLOYDB_DATABASE
+              value: f1db
+            - name: ALLOYDB_USER
+              value: postgres
+            - name: ALLOYDB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ALLOYDB_PASSWORD
+                  key: latest
+            - name: ALLOYDB_CLUSTER
+              value: f1-cluster
+            - name: ALLOYDB_INSTANCE
+              value: f1-instance
+
+            # ── GCP / Vertex AI ────────────────────────────────────────────
+            - name: GOOGLE_CLOUD_PROJECT
+              value: f1-command-center-dev
+            - name: GOOGLE_CLOUD_LOCATION
+              value: us-central1
+            - name: GOOGLE_GENAI_USE_VERTEXAI
+              value: "true"
+            - name: VERTEX_AI_LOCATION
+              value: us-central1
+            - name: PROJECT_ID
+              value: f1-command-center-dev
+            - name: REGION
+              value: us-central1
+
+            # ── FastF1 cache — local /tmp (SQLite journal incompatible with GCS FUSE random-writes)
+            - name: FASTF1_CACHE_DIR
+              value: /tmp/fastf1_cache
+
+            # ── Phase 4 RAG ────────────────────────────────────────────────
+            - name: GCS_REGULATIONS_BUCKET
+              value: f1-command-center-dev-f1-regulations
+            # DOCUMENT_AI_PROCESSOR_ID added in Phase 4 after processor is created
+            # - name: DOCUMENT_AI_PROCESSOR_ID
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: DOCUMENT_AI_PROCESSOR_ID
+            #       key: latest
+
+            # ── Phase 5 Monte Carlo ────────────────────────────────────────
+            # Uncomment once Agent Engine sandbox is created (Phase 5)
+            # - name: AGENT_ENGINE_SANDBOX
+            #   value: "projects/f1-command-center-dev/locations/us-central1/reasoningEngines/.../sandboxEnvironments/..."
+
+            # ── Calendar / Auth ────────────────────────────────────────────
+            - name: USER_EMAIL
+              value: ashwini.sharma0807@gmail.com
+            - name: TOKEN_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: TOKEN_ENCRYPTION_KEY
+                  key: latest
+            - name: GOOGLE_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: GOOGLE_OAUTH_CLIENT_SECRET
+                  key: latest
+
+  traffic:
+    - latestRevision: true
+      percent: 100
