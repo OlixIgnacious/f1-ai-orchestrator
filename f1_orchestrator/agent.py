@@ -1215,14 +1215,18 @@ f1_intel_agent = LlmAgent(
     instruction=f"""
     You are the F1 Intelligence Officer. Your ONLY job is to fetch and return raw F1 data.
 
+    SCHEMA IS THE SOURCE OF TRUTH: Always check F1_TABLE_METADATA below before writing SQL.
+    Only query tables listed there. Any other table name WILL fail with a database error.
+
     TOOL USAGE POLICY:
-    1. SCHEDULE / NEXT RACE / UPCOMING RACE / RACE DATES — ALWAYS use get_f1_schedule DIRECTLY.
-       NEVER use query_f1_db for schedule queries. There is no 'races', 'schedule', or 'grand_prix'
-       table in the database. get_f1_schedule is the ONLY correct tool for these queries.
-    2. RESULTS & STANDINGS (up to early 2026): Use query_f1_db first.
+    1. FUTURE RACES / SCHEDULE / NEXT RACE (date > today):
+       → Call get_f1_schedule(year) IMMEDIATELY. This is the ONLY source for upcoming races.
+       → Do NOT call query_f1_db — future races are not in the database.
+       → Do NOT try tables like 'races', 'schedule', 'grand_prix' — they do not exist.
+    2. PAST RACE RESULTS (date ≤ today): Use query_f1_db first.
        → If it returns Data: [] OR "Database Error", immediately fallback to fetch_fastf1_live_data.
-       → ALWAYS use ILIKE with wildcards for race_name: race_name ILIKE '%Bahrain%' NOT race_name = 'Bahrain Grand Prix'.
-    3. LIVE / 2025+ DATA: Use fetch_fastf1_live_data directly.
+       → ALWAYS use ILIKE with wildcards: race_name ILIKE '%Bahrain%' NOT race_name = 'Bahrain Grand Prix'.
+    3. LIVE / 2025+ PAST DATA: Use fetch_fastf1_live_data directly.
     4. STANDINGS: Use get_f1_standings for championship positions and points.
     5. CIRCUIT INFO: Use get_circuit_characteristics for track metadata and history.
     6. HEAD-TO-HEAD: Use get_driver_head_to_head for career or season comparisons.
@@ -1510,9 +1514,17 @@ f1_coordinator = LlmAgent(
 
     WORKED EXAMPLE — "Add next race to calendar and predict the winner":
       call get_temporal_context → "Today is 2026-04-29"
-      [DATA ✓] → transfer f1_intel_agent: "Today is 2026-04-29. Use get_f1_schedule (NOT query_f1_db) to find the next upcoming race after today. Return name, date, location."
-      [ANALYSIS ✓] → transfer f1_analysis_agent: "Today is 2026-04-29. Predict the winner of [race]."
-      [CALENDAR ✓] → transfer f1_event_scheduler: "Add [race] on [date] at [location] to calendar."
+      [DATA ✓] → transfer f1_intel_agent:
+          "Today is 2026-04-29. The next race has not happened yet — it is NOT in the database.
+           Use get_f1_schedule(2026) ONLY to find the next race after 2026-04-29.
+           Return: race name, date, circuit location. Do NOT use query_f1_db."
+      [ANALYSIS ✓] → transfer f1_analysis_agent:
+          "Today is 2026-04-29. Predict the winner of [race_name] at [circuit].
+           The race has NOT happened yet — do NOT try to fetch its results.
+           Use ONLY: get_f1_standings(2026) for current standings, and
+           query_f1_db for PAST race results at [circuit] to assess circuit form."
+      [CALENDAR ✓] → transfer f1_event_scheduler:
+          "Add [race_name] on [date] at [location] to the user's calendar."
       Combine all three answers into ONE final response.
 
     WORKED EXAMPLE — "Who won the 2024 Monaco GP?":

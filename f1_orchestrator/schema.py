@@ -1,5 +1,14 @@
 F1_TABLE_METADATA = """
 DATABASE: f1db (AlloyDB / PostgreSQL)
+This schema is the AUTHORITATIVE source of truth. Do not invent table or column names.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DATA AVAILABILITY RULE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PAST races (date ≤ today) → query AlloyDB tables below.
+FUTURE races (date > today) → NOT in the database.
+  Use get_f1_schedule(year) to find upcoming race name/date/location.
+  Use get_f1_standings(year) + query_f1_db on PAST races for prediction context.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 VALID TABLES — only these exist. Any other name will fail.
@@ -91,10 +100,11 @@ ORDER BY times_given DESC
 LIMIT 10;
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TABLES THAT DO NOT EXIST — never query these
+TABLES THAT DO NOT EXIST — querying these will fail
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 races, race_schedule, grand_prix, race_results,
 driver_standings, team_standings, constructors,
 drivers, results, seasons, circuits (Ergast names)
-→ Use get_f1_schedule tool for schedule/date queries instead.
+→ For upcoming races/schedule: use get_f1_schedule tool.
+→ For current standings: use get_f1_standings tool.
 """
