@@ -6,10 +6,27 @@ from fastapi import FastAPI
 from fastapi.responses import Response
 from google.adk.cli.fast_api import get_fast_api_app
 
+
+
 load_dotenv()
 
 # 1. APP SETUP
-app: FastAPI = get_fast_api_app(agents_dir=".", web=True, auto_create_session=True)
+# Persistent Session Storage (AlloyDB)
+user = os.getenv("ALLOYDB_USER", "postgres")
+password = os.getenv("ALLOYDB_PASSWORD")
+host = os.getenv("ALLOYDB_HOST", "127.0.0.1")
+port = os.getenv("ALLOYDB_PORT", "5433")
+db = os.getenv("ALLOYDB_DATABASE", "f1db")
+
+# Construct async connection string for DatabaseSessionService
+async_db_url = f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{db}"
+
+app: FastAPI = get_fast_api_app(
+    agents_dir=".", 
+    web=True, 
+    auto_create_session=True,
+    session_service_uri=async_db_url
+)
 
 @app.get("/health")
 def health():

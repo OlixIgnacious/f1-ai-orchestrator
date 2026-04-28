@@ -77,7 +77,10 @@ def _query_raw(sql: str, params: list = None) -> str:
     conn = _get_pool().getconn()
     try:
         cur = conn.cursor()
-        cur.execute(sql, params or [])
+        if params:
+            cur.execute(sql, params)
+        else:
+            cur.execute(sql)
         rows = cur.fetchall()
         colnames = [desc[0] for desc in cur.description]
         return f"Columns: {colnames}\nData: {rows}"
