@@ -1,0 +1,93 @@
+:root {
+  --f1-red:       #E8002D;
+  --f1-red-dark:  #a8001f;
+  --bg-base:      #0d0d0d;
+  --bg-surface:   #161616;
+  --bg-card:      #1e1e1e;
+  --bg-assistant: #140008;
+  --text-primary: #f0f0f0;
+  --text-muted:   #888;
+  --border:       #2a2a2a;
+  --radius:       10px;
+  --font:         'Inter', system-ui, -apple-system, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+
+/* Markdown table styles */
+.md-content {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.md-content table {
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.md-content th {
+  background: #2a0010;
+  color: var(--f1-red);
+  padding: 8px 12px;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 2px solid var(--f1-red);
+}
+.md-content td {
+  padding: 7px 12px;
+  border-bottom: 1px solid #2a2a2a;
+}
+.md-content tr:nth-child(even) td { background: #1a1a1a; }
+.md-content strong { color: #fff; }
+.md-content h2, .md-content h3 {
+  color: var(--f1-red);
+  margin: 14px 0 6px;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.md-content h2::before { content: '▸ '; }
+.md-content p { margin: 6px 0; }
+.md-content code {
+  background: #2a2a2a;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: 'Courier New', monospace;
+}
+.md-content ul, .md-content ol {
+  padding-left: 20px;
+  margin: 6px 0;
+}
+.md-content li { margin: 3px 0; }
+.md-content blockquote {
+  border-left: 3px solid var(--f1-red);
+  padding-left: 12px;
+  color: var(--text-muted);
+  margin: 8px 0;
+  font-style: italic;
+}
+
+/* Pulse animation for streaming */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
