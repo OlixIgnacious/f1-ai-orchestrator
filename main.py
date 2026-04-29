@@ -1,6 +1,6 @@
 import os
 import fastf1
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import Response
@@ -26,7 +26,7 @@ app: FastAPI = get_fast_api_app(
     web=True,
     auto_create_session=True,
     session_service_uri=async_db_url,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=["regex:http://localhost:[0-9]+"],
 )
 
 @app.get("/health")
