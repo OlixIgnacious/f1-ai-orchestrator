@@ -19,11 +19,15 @@ A two-tier, multi-agent AI system that delivers professional-grade F1 analysis �
 A two-tier agent hierarchy routes every query to the right specialist or sequences multiple specialists for complex cross-domain questions.
 
 ```
-User Query
+User (Web UI)
+    │
+    ▼
+FastAPI Backend
     │
     ▼
 race_strategist  (Tier 1 — Pit Wall Director)
-    │  Classifies complexity, routes to coordinator
+    │  Greets user, lists capabilities, 
+    │  classifies complexity, routes to coordinator
     ▼
 f1_coordinator   (Tier 2 — Race Engineer)
     │  Calls get_temporal_context first on every query
@@ -38,29 +42,39 @@ f1_coordinator   (Tier 2 — Race Engineer)
 
 ```mermaid
 sequenceDiagram
-    participant User
+    participant UI as Web UI (React)
     participant Orchestrator as Pit Wall Director
     participant Coordinator as Race Engineer
-    participant Intel as Intel Officer
-    participant Analysis as Performance Analyst
-    participant Steward as FIA Steward Panel
-    participant Scheduler as Event Scheduler
+    participant Specialists as Specialist Agents (Intel/Steward/etc)
 
-    User->>Orchestrator: "Was Verstappen's move on Hamilton legal? What's the standings impact?"
-    Orchestrator->>Coordinator: Route (COMPLEX — steward + intel)
-    Coordinator->>Intel: Fetch race control messages & standings
-    Intel-->>Coordinator: Race data written to session state
-    Coordinator->>Steward: Validate incident + cite regulation
-    Steward-->>Coordinator: 4-line fast verdict with FIA article + precedent
-    Coordinator-->>User: Unified response
+    User->>UI: "Hi, was the incident legal?"
+    UI->>Orchestrator: Stream Query
+    Orchestrator-->>UI: "Welcome! [Capabilities List]"
+    Orchestrator->>Coordinator: Route (COMPLEX — steward)
+    Coordinator->>Specialists: Execute specialist tools (RAG/DB)
+    Specialists-->>Coordinator: Result data written to session state
+    Coordinator-->>UI: Unified response (rendered as Markdown)
 ```
+
+---
+
+## 🖥️ User Interface
+
+The system includes a modern, responsive web interface built with **React** and **Vite**, providing a seamless "Virtual Pit Wall" experience.
+
+- **Streaming Responses:** Watch the AI's "thinking" process in real-time as it orchestrates between specialists.
+- **Agent Attribution:** Clearly see which specialist (Intel, Analysis, Steward) provided each part of the answer.
+- **Rich Markdown Support:** Tables, telemetry data, and race schedules are rendered beautifully.
+- **Session Management:** Automatically resumes your last session or allows you to start a fresh one.
+
+![F1 UI Desktop](./image.png)
 
 ---
 
 ## 🎙️ The Specialist Roster
 
 ### 1. Pit Wall Director (Orchestrator)
-Classifies every query as `[SIMPLE]` or `[COMPLEX]`. Never answers directly — only routes. Adds a one-line hint before passing to the coordinator.
+Classifies every query as `[SIMPLE]` or `[COMPLEX]` and handles user greetings with a categorized overview of system capabilities. Never answers technical questions directly — only greets and routes. Adds a one-line hint before passing to the coordinator.
 
 ### 2. Race Engineer (Coordinator)
 Always calls `get_temporal_context` first so every specialist receives the current date. Sequences specialists in the correct order, passes shared data through `ToolContext.state` to avoid duplicate FastF1 fetches, and aggregates results into one unified response with structured markdown output.
@@ -153,13 +167,14 @@ Discovers F1 sessions and presents two calendar options:
 |---|---|
 | Agent Framework | Google ADK 1.28.1 |
 | LLM | Gemini 2.5 Flash (retry: 429/503, exponential backoff) |
+| Frontend | React 19 + Vite 6 |
 | Serving | FastAPI via `get_fast_api_app()` |
 | Deployment | Cloud Run (gen2, 4Gi) |
 | Database | AlloyDB for PostgreSQL + pgvector + ScaNN |
 | Vector Search | AlloyDB ScaNN (cosine similarity) |
 | Embeddings | Vertex AI `text-embedding-005` (768-dim) |
 | Telemetry | FastF1 3.8.2 |
-| FastF1 Cache | `/tmp/fastf1_cache` (Cloud Run — SQLite incompatible with GCS FUSE random writes) |
+| FastF1 Cache | `/tmp/fastf1_cache` (Cloud Run) |
 | Monte Carlo | Agent Engine Sandbox (Vertex AI) |
 | Calendar | Google Calendar API + `.ics` file generation |
 | Connection Pool | `psycopg2.ThreadedConnectionPool` (min=2, max=10) |
@@ -197,9 +212,18 @@ USER_EMAIL=your-email@gmail.com
 ```
 
 ### Local Development
+
+#### Backend
 ```bash
 pip install -r requirements.txt
 python main.py
+```
+
+#### Frontend (UI)
+```bash
+cd f1-ui
+npm install
+npm run dev
 ```
 
 ### Deploy to Cloud Run
@@ -246,6 +270,9 @@ f1-ai-orchestrator/
 │   ├── agent.py          # All tools + all agents
 │   ├── schema.py         # AlloyDB table metadata + verified join patterns
 │   └── data_dictionary.md
+├── f1-ui/                # React + Vite Frontend
+│   ├── src/              # App logic and components
+│   └── public/           # Static assets
 ├── data/                 # Pre-downloaded FastF1 CSVs (not committed)
 │   ├── telemetry_summary.csv
 │   ├── stints.csv
