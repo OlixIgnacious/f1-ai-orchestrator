@@ -22,10 +22,11 @@ db = os.getenv("ALLOYDB_DATABASE", "f1db")
 async_db_url = f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{db}"
 
 app: FastAPI = get_fast_api_app(
-    agents_dir=".", 
-    web=True, 
+    agents_dir=".",
+    web=True,
     auto_create_session=True,
-    session_service_uri=async_db_url
+    session_service_uri=async_db_url,
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],
 )
 
 @app.get("/health")

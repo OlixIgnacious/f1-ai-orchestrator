@@ -3,6 +3,11 @@
 
 # Environments
 .env
+
+# Local React UI (dev only, not part of deployment)
+f1-ui/node_modules/
+f1-ui/dist/
+f1-ui/.env.local
 .env.*
 .venv/
 env/
