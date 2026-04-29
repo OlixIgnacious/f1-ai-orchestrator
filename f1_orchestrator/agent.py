@@ -105,7 +105,8 @@ def _to_md_table(raw: str, title: str = "") -> str:
         if not rows:
             return "Data: []"
         str_rows = [[str(v) if v is not None else "—" for v in row] for row in rows]
-        header = "| " + " | ".join(str(c) for c in colnames) + " |"
+        fmt_col = lambda c: str(c).replace('_', ' ').title()
+        header = "| " + " | ".join(fmt_col(c) for c in colnames) + " |"
         sep    = "|" + "|".join(["---"] * len(colnames)) + "|"
         body   = "\n".join("| " + " | ".join(r) + " |" for r in str_rows)
         table  = f"{header}\n{sep}\n{body}"
@@ -1481,7 +1482,23 @@ f1_steward_agent = LlmAgent(
     **Precedent:** [race, year, driver] — [ruling], [penalty]
     **Likely Penalty:** [penalty or "None"]
 
-    If data is unavailable, use 'from model knowledge' as the finding qualifier.
+    ── CONFIDENCE RULES ─────────────────────────────────────────────────────────
+    After calling query_steward_decisions and query_f1_regulations:
+
+    IF the specific incident IS found in f1_decisions (race + year match):
+      → Use DB data directly. High confidence verdict.
+
+    IF no specific match found in f1_decisions (Data: [] or low similarity):
+      → Finding must be: INCONCLUSIVE (insufficient data in decisions database)
+      → Article: cite the most relevant regulation found, labelled "(regulation only)"
+      → Precedent: cite the closest similar case, explicitly labelled
+        "Similar case only — not this specific incident"
+      → Likely Penalty: "Unknown — specific incident not in database"
+      → Add one line: "_Note: No steward decision found for this specific incident._"
+
+    NEVER invent a finding of VIOLATION or NO VIOLATION when the DB has no record.
+    Contradicting the cited precedent (e.g. precedent shows penalty but finding is
+    NO VIOLATION) is a critical error — avoid this.
 
     ── ON-DEMAND FULL RULING ────────────────────────────────────────────────────
     Call get_full_ruling() ONLY if the user EXPLICITLY asks for:
