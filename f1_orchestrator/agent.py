@@ -1453,6 +1453,7 @@ f1_analysis_agent = LlmAgent(
         fetch_fastf1_live_data,
         query_f1_db,
         get_f1_standings,
+        get_f1_schedule,
     ],
     before_agent_callback=_log_agent_start,
     code_executor=_code_executor,  # None if sandbox not configured — agent still works
