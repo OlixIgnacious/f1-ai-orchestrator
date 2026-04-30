@@ -657,8 +657,8 @@ def send_f1_calendar_invite(event_name: str, start_time: str, location: str,
             }
             url = f"https://www.google.com/calendar/render?{urllib.parse.urlencode(params)}"
             return (
-                f"⚠️ '{target_email}' doesn't look like a valid email address. "
-                f"Use this link to add it manually: **[Add to Calendar]({url})**"
+                f"📅 No valid email provided — here's your one-click link to add it to your calendar:\n\n"
+                f"**[Add to Calendar →]({url})**"
             )
         except Exception:
             return f"⚠️ Invalid email address '{target_email}'. Please provide a valid email e.g. user@gmail.com"
@@ -708,7 +708,7 @@ def send_f1_calendar_invite(event_name: str, start_time: str, location: str,
                 'location': location
             }
             url = f"https://www.google.com/calendar/render?{urllib.parse.urlencode(params)}"
-            return f"⚠️ Direct calendar write failed. **[One-Click Add Link]({url})**"
+            return f"📅 Direct calendar addition isn't available in this environment — here's your one-click link instead:\n\n**[Add to Calendar →]({url})**"
         except Exception:
             return f"Calendar Error: {str(calendar_err)}"
 
