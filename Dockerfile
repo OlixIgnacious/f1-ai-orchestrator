@@ -1,7 +1,14 @@
-# Use an official Python runtime as a parent image
+# ── Stage 1: Build React UI ──────────────────────────────────────────────────
+FROM node:20-slim AS ui-builder
+WORKDIR /app/f1-ui
+COPY f1-ui/package*.json ./
+RUN npm ci
+COPY f1-ui/ ./
+RUN npm run build
+
+# ── Stage 2: Python app ───────────────────────────────────────────────────────
 FROM python:3.11-slim
 
-# Install system dependencies for psycopg2 and matplotlib
 RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
@@ -10,20 +17,15 @@ RUN apt-get update && apt-get install -y \
     libpng-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Set the working directory in the container
 WORKDIR /app
 
-# Copy the requirements file into the container at /app
 COPY requirements.txt .
-
-# Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code into the container at /app
 COPY . .
 
-# Expose the port the app runs on
-EXPOSE 8080
+# Copy built React UI from Stage 1
+COPY --from=ui-builder /app/f1-ui/dist /app/f1-ui/dist
 
-# Run the application
+EXPOSE 8080
 CMD ["python", "main.py"]

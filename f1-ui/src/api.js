@@ -1,4 +1,6 @@
-const API_URL = import.meta.env.VITE_API_URL || 'https://f1-orchestrator-521055768390.us-central1.run.app';
+// Empty string = same origin (production, served from Cloud Run)
+// Set VITE_API_URL in .env.local to point at Cloud Run for local dev
+const API_URL = import.meta.env.VITE_API_URL ?? '';
 const USER_ID  = import.meta.env.VITE_USER_ID  || 'user';
 const APP_NAME = import.meta.env.VITE_APP_NAME || 'f1_orchestrator';
 

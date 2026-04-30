@@ -5,7 +5,7 @@ import MessageList from './components/MessageList';
 import InputBar from './components/InputBar';
 import './styles/theme.css';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://f1-orchestrator-521055768390.us-central1.run.app';
+const API_URL = import.meta.env.VITE_API_URL ?? '';
 const USER_ID  = import.meta.env.VITE_USER_ID  || 'user';
 
 export default function App() {

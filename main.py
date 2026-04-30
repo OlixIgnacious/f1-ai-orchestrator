@@ -4,6 +4,7 @@ from datetime import timedelta, timezone
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import Response
+from fastapi.staticfiles import StaticFiles
 from google.adk.cli.fast_api import get_fast_api_app
 
 
@@ -28,6 +29,11 @@ app: FastAPI = get_fast_api_app(
     session_service_uri=async_db_url,
     allow_origins=["regex:http://localhost:[0-9]+"],
 )
+
+# Serve the React UI at /ui/ — only mounted when the build exists (production)
+_ui_dist = os.path.join(os.path.dirname(__file__), "f1-ui", "dist")
+if os.path.exists(_ui_dist):
+    app.mount("/ui", StaticFiles(directory=_ui_dist, html=True), name="ui")
 
 @app.get("/health")
 def health():
